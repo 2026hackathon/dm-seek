@@ -1,0 +1,725 @@
+# 马冬梅计划 — Agent 间 I/O 契约与编排设计
+
+| 项目 | 内容 |
+| --- | --- |
+| 文档类型 | 设计契约（agent 间输入/输出 schema + 编排返工循环） |
+| 适用产品 | 马冬梅计划（dm-seek）Claude Code 成品 team |
+| 关联 PRD | `D:\dev_repository\CT-hackathon\dm-seek\docs\马冬梅计划-PRD.md`（**v0.4**） |
+| 覆盖范围 | PRD §4 全链路 + §6 角色归属约束 + §6.4 teammate 协调形态（路径 B） + §7.4 双源切换 |
+| 版本 | v0.2（T7 评审收敛：对齐路径 B teammate 形态 + 字段一致性） |
+| 日期 | 2026-06-12 |
+| 负责人 | core-dev |
+| 运行形态 | **路径 B（agent team teammate）**：7 agent 平级，dongmei-ma 协调者经任务列表+消息驱动，非 subagent 父子委派 |
+| 状态 | T7 评审收敛中 |
+
+> 本文是后续所有实现任务的**总契约**。所有 agent 的 prompt / skill 实现必须遵守此处定义的输入输出结构与编排语义；如需变更须回溯本文并通知 tech-lead。
+
+---
+
+## 0. 约定与说明
+
+### 0.1 schema 表达形式
+
+- agent 之间不是程序化函数调用，而是 **agent team teammate 间经任务列表 + 消息的自然语言协作**（路径 B，协调非父子委派）。本文用 **JSON 形态描述「结构化载荷」**，作为各 agent 输出消息中应当包含的字段约定。
+- **传递形态（已裁定，tech-lead 开放点3，实现约束）**：采「**自然语言为主 + 结构化字段可无歧义提取**」——agent 在自然语言回复中**必须能无歧义地给出本 schema 约定的每个字段值**，但**不强制贴 JSON 代码块**。各 agent prompt（T9–T14）遵循此约束：字段值可内嵌于自然语言叙述，只要下游/dongmei-ma 能确定性地抽取到 schema 要求的字段。
+- 字段标注：`必填` / `可选`。类型用 `string` / `number` / `boolean` / `enum` / `array` / `object` 表示。
+- 所有载荷都带一个公共信封（§1），便于在返工循环中关联同一次查询的多轮产物。
+
+### 0.2 核心原则（贯穿全契约，来自 PRD §1.2 / §11.1）
+
+- **代码为唯一事实基准**：每条结论必须可回挂到 `代码 / commit / 工单` 出处。任何 agent 产出结论性字段时，必须同时产出对应的 `evidence` 出处数组（§2.5）。
+- **归属约束在契约层显式化**（PRD §6.2），见 §8。
+- **离散三级置信度**（高/中/低，PRD O4）、**≤2 轮发散返工 + 降级交付**（PRD O5）在编排契约（§7）中固化。
+
+---
+
+## 1. 公共信封（Envelope）
+
+所有 agent 间结构化载荷共享以下信封字段，使一次查询的多轮、多 agent 产物可被 dongmei-ma 关联与归并。
+
+> **teammate 形态下的信封语义（路径 B，team-lead 点名复核）**：本项目是 agent team，7 个 agent 为**平级 teammate**，经**共享任务列表 + 消息（SendMessage）**协作；**dongmei-ma 是协调者 teammate（非父节点、非 subagent 委派者）**，类比开发队里的 tech-lead。信封字段在此形态下的归属：
+> - `queryId`：由 **dongmei-ma 在接收用户疑问时生成**，其余 teammate 在回复消息/子任务中**透传、不改写**。
+> - `round`：由 **dongmei-ma（协调者）统一维护**——每发起一轮有效发散（§7.3 有新增维度）时 +1；其余 teammate 收到带 round 的消息后**透传**，不自增。
+> - `from`/`to`：标识消息的产出方与目标 teammate；「下游」指协作链路下一环，经消息/子任务流转，而非父子调用返回。
+> 即：schema 与字段语义不变，仅**驱动方式从「subagent 委派、结果回主控」改为「teammate 间任务/消息协调」**。下文 §7 编排循环的「重派」一律按此理解（见 §7 注）。
+
+```json
+{
+  "queryId": "q-20260612-001",
+  "round": 0,
+  "from": "kb-keeper",
+  "to": "dongmei-ma",
+  "payloadType": "kb_clue_set",
+  "payload": { }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `queryId` | string | 必填 | 一次用户查询的唯一 id，贯穿全链路与所有返工轮次 |
+| `round` | number | 必填 | 返工轮次。首轮=0；每次发散重派 +1；上限 2（即最大 round=2，见 §7） |
+| `from` | enum(agent id) | 必填 | 产出方 agent id |
+| `to` | enum(agent id) | 必填 | 目标 agent id（通常为 dongmei-ma 或下游 agent） |
+| `payloadType` | enum | 必填 | 载荷类型，见各节定义（`user_query` / `kb_clue_set` / `code_location_set` / `repo_timeline` / `jira_reasons` / `synthesis` / `verification` / `final_report`） |
+| `payload` | object | 必填 | 该类型的具体结构，见对应小节 |
+
+> 实现提示：`queryId` 由 dongmei-ma 在接收用户疑问时生成；其余 agent 透传，不得改写。
+
+---
+
+## 2. 关键传递物 schema
+
+### 2.1 用户疑问 → dongmei-ma 解析结果（`user_query` / `query_plan`）
+
+dongmei-ma 接收一句自然语言疑问，解析为查询计划。这是编排起点（PRD §4.1 step1~2）。
+
+```json
+{
+  "queryId": "q-20260612-001",
+  "round": 0,
+  "from": "dongmei-ma",
+  "to": "kb-keeper",
+  "payloadType": "query_plan",
+  "payload": {
+    "rawQuestion": "为什么订单超时取消的阈值从30分钟改成了15分钟？",
+    "intent": "change_reason",
+    "scenario": 1,
+    "keywords": ["订单", "超时取消", "阈值", "30分钟", "15分钟"],
+    "involvesUI": false,
+    "figmaLinks": [],
+    "expectedOutputs": ["current_state", "timeline", "root_cause"],
+    "language": "zh"
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `rawQuestion` | string | 必填 | 用户原始疑问，原文保留 |
+| `intent` | enum | 必填 | 意图分类，建议枚举：`current_state` / `change_reason` / `impact_scope` / `defect_locate` / `regression_trace` / `feature_evaporation` / `interface_dispute` / `tech_debt` / `onboarding`（对齐 PRD §5 场景 1~8，可扩展） |
+| `scenario` | number | 可选 | 命中的 PRD §5 场景编号（1~8，二期 9），仅作分析方法选型提示 |
+| `keywords` | array<string> | 必填 | 供 kb-keeper / code-analyst 检索的关键词候选 |
+| `involvesUI` | boolean | 必填 | 是否涉及 UI（决定二期是否触发 design-tracer，首版恒处理为 false 分支） |
+| `figmaLinks` | array<string> | 可选 | 用户随疑问提供的 Figma 链接（二期用；首版透传不消费） |
+| `expectedOutputs` | array<enum> | 必填 | 期望输出维度，取值 `current_state` / `timeline` / `root_cause` / `confidence` |
+| `language` | enum(`zh`/`en`) | 必填 | 交付语言，默认 `zh`（PRD O9）；`en` 仅当用户显式请求 |
+
+### 2.2 kb-keeper：KB 线索集（`kb_clue_set`）
+
+kb-keeper 是**唯一 KB 读写口**（PRD §6.2），经 obsidian CLI + Knowlery `/ask` 检索，给出候选线索，**不读源码**。
+
+```json
+{
+  "queryId": "q-20260612-001",
+  "round": 0,
+  "from": "kb-keeper",
+  "to": "code-analyst",
+  "payloadType": "kb_clue_set",
+  "payload": {
+    "hit": true,
+    "clues": [
+      {
+        "module": "order-service",
+        "repoHint": "hdr-delivery-project",
+        "paths": ["order-service/src/main/java/.../OrderCancelService.java"],
+        "coreClasses": ["OrderCancelService", "OrderTimeoutPolicy"],
+        "keywords": ["timeout", "cancel", "threshold"],
+        "citation": "queries/2025-08-order-timeout.md#L12",
+        "relevance": "high"
+      }
+    ],
+    "priorConclusion": {
+      "exists": false,
+      "ref": null
+    },
+    "notes": "KB 命中一条历史结论的相邻线索；无该问题的既有完整结论"
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `hit` | boolean | 必填 | KB 是否命中线索。`false` → code-analyst 走源码兜底（PRD §4.1 step4） |
+| `clues` | array<object> | 必填(可空) | 候选线索数组；`hit=false` 时为空数组 |
+| `clues[].module` | string | 必填 | 候选模块名 |
+| `clues[].repoHint` | string | 可选 | 候选所属仓库（供 code-analyst→repo 映射参考，非权威） |
+| `clues[].paths` | array<string> | 可选 | 候选文件/路径 |
+| `clues[].coreClasses` | array<string> | 可选 | 候选核心类 |
+| `clues[].keywords` | array<string> | 可选 | 检索命中的关键词 |
+| `clues[].citation` | string | 必填 | KB 出处引用（Knowlery `/ask` 返回的带引用位置），用于可回挂 |
+| `clues[].relevance` | enum(`high`/`medium`/`low`) | 必填 | kb-keeper 对该线索相关度的主观分级 |
+| `priorConclusion.exists` | boolean | 必填 | KB `queries/` 是否已有该问题的**完整既有结论**（命中则可秒答，PRD §4.3 副产品） |
+| `priorConclusion.ref` | string | 可选 | 既有结论的 KB 路径；`exists=true` 时必填 |
+| `notes` | string | 可选 | 自由说明 |
+
+> 归属约束：`citation` 必须是 KB 内部引用；kb-keeper 不得返回源码内容（源码读取归 code-analyst）。
+
+### 2.3 code-analyst：定位结果 → repo+模块映射（`code_location_set`）
+
+code-analyst 据 KB 线索**定位 + 解读** core-ng 代码（本地直读 / 远端经 repo-tracer / KB 未命中源码兜底，PRD §4.1 step4），并**把定位结果映射到具体 repo + 模块**，告知 repo-tracer 涉及哪些仓库（PRD §6.1）。
+
+```json
+{
+  "queryId": "q-20260612-001",
+  "round": 0,
+  "from": "code-analyst",
+  "to": "repo-tracer",
+  "payloadType": "code_location_set",
+  "payload": {
+    "sourceMode": "local",
+    "locations": [
+      {
+        "repo": "hdr-delivery-project",
+        "module": "order-service",
+        "filePath": "order-service/src/main/java/app/order/service/OrderCancelService.java",
+        "symbol": "OrderCancelService.cancelTimeoutOrder",
+        "lineRange": [42, 78],
+        "coreNgRole": "Service",
+        "entryPoint": {
+          "type": "kafka",
+          "marker": "implements MessageHandler<OrderTimeoutMessage>; bindSubscribe in OrderServiceApp"
+        },
+        "interpretation": "超时取消阈值由 OrderTimeoutPolicy.thresholdMinutes 注入，当前值 15；该方法在 Kafka 消费链路末端执行取消。",
+        "evidence": [
+          {"type": "code", "ref": "order-service/.../OrderCancelService.java#L42-L78"}
+        ],
+        "needRemoteFetch": false
+      }
+    ],
+    "reposInvolved": ["hdr-delivery-project"],
+    "kbMiss": false,
+    "fallbackUsed": false
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `sourceMode` | enum(`local`/`remote`/`mixed`) | 必填 | 代码来源模式（PRD §7.4）；`remote`/`mixed` 时相关代码经 repo-tracer 取得 |
+| `locations` | array<object> | 必填 | 定位结果数组 |
+| `locations[].repo` | string | 必填 | 该定位点归属仓库（多仓路由依据，PRD §6.2 跨仓） |
+| `locations[].module` | string | 必填 | 模块名 |
+| `locations[].filePath` | string | 必填 | 文件路径（仓库内相对路径） |
+| `locations[].symbol` | string | 可选 | 类/方法符号 |
+| `locations[].lineRange` | array<number>[2] | 可选 | 行范围 |
+| `locations[].coreNgRole` | enum | 可选 | core-ng 角色：`RestEntry` / `KafkaEntry` / `Controller` / `Service` / `QueryService` / `OperationService` / `Repository` / `Domain`（对齐 PRD §8.2，规则集中维护） |
+| `locations[].entryPoint` | object | 可选 | 若为入口点，记录类型(`rest`/`kafka`)与**实际代码标志**（非框架猜测，PRD §8.3） |
+| `locations[].interpretation` | string | 必填 | 代码解读（现状/事实） |
+| `locations[].evidence` | array<evidence> | 必填 | 代码出处（§2.5），`type` 恒为 `code` |
+| `locations[].needRemoteFetch` | boolean | 必填 | 该段代码是否需向 repo-tracer 请求远端最新（触发 §7.4 过时判定询问） |
+| `reposInvolved` | array<string> | 必填 | 本次查询涉及的全部仓库去重列表 → repo-tracer 据此路由多个 MCP 实例/本地仓 |
+| `kbMiss` | boolean | 必填 | KB 是否未命中（true 表示走了源码兜底） |
+| `fallbackUsed` | boolean | 必填 | 是否实际使用了源码兜底搜索 |
+
+> 归属约束：远端模式下 code-analyst **不直连 GitHub MCP**，通过 `needRemoteFetch=true` + `code_fetch_request`（§2.3.1）请 repo-tracer 取码。
+
+#### 2.3.1 code-analyst → repo-tracer 远端取码请求（`code_fetch_request`）
+
+远端模式 / 过时确认后取最新时使用。
+
+```json
+{
+  "queryId": "q-20260612-001", "round": 0,
+  "from": "code-analyst", "to": "repo-tracer",
+  "payloadType": "code_fetch_request",
+  "payload": {
+    "requests": [
+      {"repo": "hdr-delivery-project", "filePath": "order-service/.../OrderCancelService.java", "ref": "HEAD"}
+    ]
+  }
+}
+```
+
+repo-tracer 以 `code_fetch_response` 返回 `{repo, filePath, ref, content, fetchedSha}`，code-analyst 再据此完成解读。
+
+### 2.4 repo-tracer：提交时间线 + 抽取工单号（`repo_timeline`）
+
+repo-tracer 是 **Git/GitHub 网关，独占全部 GitHub MCP 实例**（PRD §6.2）。本地读 git 历史 / 远端经 GitHub MCP；**始终从 commit subject 抽取 Jira 工单号**（默认正则 `^([A-Z]+-\d+)[:\s]`，冒号或空格分隔，本仓 `DELI-\d+`，可配置，容错无号，Revert 提交穿透抽出原号，PRD O3 / `design-core-ng-recognition.md` §5）。
+
+```json
+{
+  "queryId": "q-20260612-001",
+  "round": 0,
+  "from": "repo-tracer",
+  "to": "jira-tracer",
+  "payloadType": "repo_timeline",
+  "payload": {
+    "timeline": [
+      {
+        "repo": "hdr-delivery-project",
+        "sha": "a1b2c3d",
+        "author": "zhang.san",
+        "date": "2025-08-14T10:22:00+08:00",
+        "subject": "DELI-4521: 超时取消阈值 30min→15min",
+        "ticketIds": ["DELI-4521"],
+        "noTicket": false,
+        "isRevert": false,
+        "touchedPaths": ["order-service/.../OrderTimeoutPolicy.java"],
+        "relevance": "primary"
+      },
+      {
+        "repo": "hdr-delivery-project",
+        "sha": "c0ffee1",
+        "author": "wang.wu",
+        "date": "2025-09-01T09:00:00+08:00",
+        "subject": "Revert \"DELI-4521: 超时取消阈值 30min→15min\"",
+        "ticketIds": ["DELI-4521"],
+        "noTicket": false,
+        "isRevert": true,
+        "touchedPaths": ["order-service/.../OrderTimeoutPolicy.java"],
+        "relevance": "primary"
+      },
+      {
+        "repo": "hdr-delivery-project",
+        "sha": "e4f5g6h",
+        "author": "li.si",
+        "date": "2025-06-02T14:05:00+08:00",
+        "subject": "重构超时策略读取（无单号）",
+        "ticketIds": [],
+        "noTicket": true,
+        "isRevert": false,
+        "touchedPaths": ["order-service/.../OrderTimeoutPolicy.java"],
+        "relevance": "context"
+      }
+    ],
+    "ticketIdsAll": ["DELI-4521"],
+    "regexUsed": "^([A-Z]+-\\d+)[:\\s]",
+    "reposCovered": ["hdr-delivery-project"],
+    "shallowWarning": false
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `timeline` | array<object> | 必填 | 按时间排序的相关 commit |
+| `timeline[].repo` | string | 必填 | commit 所属仓库（多仓时区分） |
+| `timeline[].sha` | string | 必填 | commit sha（出处锚点） |
+| `timeline[].author` | string | 可选 | 作者（缺陷责任/onboarding 场景用） |
+| `timeline[].date` | string(ISO8601) | 必填 | 提交时间 |
+| `timeline[].subject` | string | 必填 | commit subject 原文 |
+| `timeline[].ticketIds` | array<string> | 必填 | 抽取到的工单号；无号时为空数组。正则 `^([A-Z]+-\d+)[:\s]`（冒号或空格分隔，本仓 `DELI-\d+`，可配置，见 `design-core-ng-recognition.md` §5）；Revert 提交从被包裹的原 subject 二次抽出 |
+| `timeline[].noTicket` | boolean | 可选 | 标记无号提交（容错，PRD O3）；为 true 时 `ticketIds` 为空 |
+| `timeline[].isRevert` | boolean | 可选 | 标记 `Revert "..."` 提交（默认行为：穿透抽出被 revert 的原工单号填入 `ticketIds`，并置 `isRevert=true`）。支撑场景7功能蒸发追踪（与 `design-core-ng-recognition.md` §5、issuekey 抽取用例#3、测试计划 TC-9.8 一致） |
+| `timeline[].touchedPaths` | array<string> | 可选 | 该 commit 触碰的相关路径 |
+| `timeline[].relevance` | enum(`primary`/`context`) | 必填 | 主因 commit vs 上下文 commit |
+| `ticketIdsAll` | array<string> | 必填 | 全时间线去重后的工单号集合 → 交给 jira-tracer |
+| `regexUsed` | string | 必填 | 本次实际使用的抽取正则（默认/本仓/用户配置，PRD O3 可配置） |
+| `reposCovered` | array<string> | 必填 | 本次实际覆盖的仓库（应等于 code-analyst 的 `reposInvolved`，缺失即风险，供 verifier 校验） |
+| `shallowWarning` | boolean | 必填 | 是否检测到 shallow clone（PRD §9：本地 git 不能 shallow，缺历史 → 影响置信度） |
+
+> 归属约束：仅 repo-tracer 可调用 GitHub MCP；多仓时每仓对应独立实例 + 独立 token，由 repo-tracer 路由（PRD §6.2 / §9）。
+
+### 2.5 出处对象（evidence，复用类型）
+
+贯穿 code-analyst / repo-tracer / jira-tracer / synthesizer 的统一出处结构，是「可回挂出处」原则的载体。
+
+```json
+{ "type": "code", "ref": "order-service/.../OrderCancelService.java#L42-L78" }
+{ "type": "commit", "ref": "hdr-delivery-project@a1b2c3d" }
+{ "type": "jira", "ref": "DELI-4521" }
+{ "type": "kb", "ref": "queries/2025-08-order-timeout.md#L12" }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `type` | enum(`code`/`commit`/`jira`/`kb`) | 必填 | 出处来源类型 |
+| `ref` | string | 必填 | 可定位的引用（路径#行 / repo@sha / 工单号 / KB 路径#行） |
+
+### 2.6 jira-tracer：工单业务原因（`jira_reasons`）
+
+jira-tracer 经 **Jira MCP** 取工单业务原因与多工单因果脉络（PRD §6.1 / §9）。
+
+```json
+{
+  "queryId": "q-20260612-001",
+  "round": 0,
+  "from": "jira-tracer",
+  "to": "synthesizer",
+  "payloadType": "jira_reasons",
+  "payload": {
+    "tickets": [
+      {
+        "id": "DELI-4521",
+        "found": true,
+        "summary": "缩短订单超时取消阈值至15分钟",
+        "type": "Story",
+        "status": "Done",
+        "businessReason": "运营反馈30分钟占用库存过久，影响周转；A/B 验证15分钟转化更优。",
+        "linkedTickets": ["DELI-4400"],
+        "resolvedDate": "2025-08-13",
+        "evidence": [{"type": "jira", "ref": "DELI-4521"}]
+      }
+    ],
+    "causalChain": "DELI-4400(库存周转优化需求) → DELI-4521(阈值调整实现)",
+    "missingTickets": []
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `tickets` | array<object> | 必填 | 工单详情数组 |
+| `tickets[].id` | string | 必填 | 工单号 |
+| `tickets[].found` | boolean | 必填 | Jira 中是否查到（false → 计入 `missingTickets`，影响置信度） |
+| `tickets[].summary` | string | 可选 | 工单标题 |
+| `tickets[].type` | string | 可选 | 工单类型（Story/Bug/Task…） |
+| `tickets[].status` | string | 可选 | 工单状态 |
+| `tickets[].businessReason` | string | 必填(found=true) | **业务原因**（根因解释核心来源） |
+| `tickets[].linkedTickets` | array<string> | 可选 | 关联工单（因果脉络） |
+| `tickets[].resolvedDate` | string | 可选 | 解决/关闭日期。**来源 REST v3 `fields=resolutiondate`**（透传型 Jira MCP 下 jira-tracer 拼 path 须显式取该字段否则落空；toolmap §2 详情端点 fields 清单须含 `resolutiondate`，critic C8） |
+| `tickets[].evidence` | array<evidence> | 必填 | 出处，`type` 恒为 `jira` |
+| `causalChain` | string | 可选 | 多工单因果脉络的叙述。**取数为多步**：透传型下非单次 `jira_get` 可得——jira-tracer 须先取主工单 `issuelinks`+`parent`，再经 JQL 二次拉相邻工单组装（toolmap §2/§4 机制，T13 实现注意，critic C9） |
+| `missingTickets` | array<string> | 必填 | 有号但 Jira 未查到的工单（缺口标注用） |
+
+### 2.7 synthesizer：三源综合结论（`synthesis`）
+
+synthesizer 综合 code + git + jira → 结论（PRD §6.1）；**分析方法沉淀为可复用 skill**（按 §5 的 9 类场景）。
+
+```json
+{
+  "queryId": "q-20260612-001",
+  "round": 0,
+  "from": "synthesizer",
+  "to": "evidence-verifier",
+  "payloadType": "synthesis",
+  "payload": {
+    "scenario": "change_reason",
+    "analysisMethod": "change-reason-tracing-v1",
+    "conclusions": [
+      {
+        "statement": "订单超时取消阈值于2025-08-14由30分钟改为15分钟。",
+        "dimension": "current_state",
+        "evidence": [
+          {"type": "code", "ref": "order-service/.../OrderTimeoutPolicy.java#L20"},
+          {"type": "commit", "ref": "hdr-delivery-project@a1b2c3d"}
+        ]
+      },
+      {
+        "statement": "变更原因为缩短库存占用、提升周转（运营需求 DELI-4400 派生）。",
+        "dimension": "root_cause",
+        "evidence": [{"type": "jira", "ref": "DELI-4521"}]
+      }
+    ],
+    "timelineNarrative": "2025-06 重构策略读取(无单号) → 2025-08-14 DELI-4521 调整阈值。",
+    "sourcesPresent": {"code": true, "git": true, "jira": true},
+    "unknowns": []
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `scenario` | enum | 必填 | 对应分析场景（同 `intent` 枚举） |
+| `analysisMethod` | string | 必填 | 所用分析方法 method id，命名 `<scene-slug>-v1`（如 `change-reason-tracing-v1`）；全部 method 收于单一项目级 skill `synthesis-core`（`.claude/skills/synthesis-core/`，单 skill 多 method），见 `design-synthesis-and-verification.md` §2/§8 |
+| `conclusions` | array<object> | 必填 | 结论数组 |
+| `conclusions[].statement` | string | 必填 | 结论文本 |
+| `conclusions[].dimension` | enum | 必填 | 维度：`current_state` / `timeline` / `root_cause` |
+| `conclusions[].evidence` | array<evidence> | 必填 | **每条结论必须挂出处**（核心原则） |
+| `timelineNarrative` | string | 可选 | 演变时间线叙述 |
+| `sourcesPresent` | object{code,git,jira:boolean} | 必填 | 三源是否齐备（verifier 置信度判据的直接输入） |
+| `unknowns` | array<string> | 必填 | synthesizer 自认的未决/推断点（供 verifier 重点校验） |
+
+### 2.8 evidence-verifier：出处校验 + 置信度 + 缺口（`verification`）
+
+evidence-verifier 校验每条结论是否挂着 `代码/commit/工单` 出处 + 输出**置信度（高/中/低）** + 不足时**触发发散返工**（PRD §6.1 / O4）。
+
+```json
+{
+  "queryId": "q-20260612-001",
+  "round": 0,
+  "from": "evidence-verifier",
+  "to": "dongmei-ma",
+  "payloadType": "verification",
+  "payload": {
+    "verdict": "sufficient",
+    "confidence": "high",
+    "perConclusion": [
+      {"statement": "订单超时取消阈值...改为15分钟。", "hasEvidence": true, "evidenceTypes": ["code","commit"], "ok": true},
+      {"statement": "变更原因为...", "hasEvidence": true, "evidenceTypes": ["jira"], "ok": true}
+    ],
+    "gaps": [],
+    "divergeHints": [],
+    "boundaryViolations": []
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `verdict` | enum(`sufficient`/`insufficient`) | 必填 | 证据是否充分。`insufficient` → dongmei-ma 决定是否发散返工（§7） |
+| `confidence` | enum(`high`/`medium`/`low`) | 必填 | 置信度，判据见 §7.2 |
+| `perConclusion` | array<object> | 必填 | 逐结论校验 |
+| `perConclusion[].hasEvidence` | boolean | 必填 | 是否挂了出处 |
+| `perConclusion[].evidenceTypes` | array<enum> | 必填 | 实际具备的出处类型 |
+| `perConclusion[].ok` | boolean | 必填 | 该结论是否通过校验 |
+| `gaps` | array<object> | 必填 | 缺口标注；`insufficient` 或 `confidence<high` 时必有内容 |
+| `gaps[].missingSource` | enum(`code`/`git`/`jira`) | 必填 | 缺哪一源 |
+| `gaps[].whichConclusion` | string | 必填 | 关联到哪条结论 |
+| `gaps[].detail` | string | 必填 | 缺口细节（降级交付时直接呈现给用户） |
+| `divergeHints` | array<enum> | 必填 | **发散重派建议项**，取值自 §7.3 可枚举清单；`verdict=sufficient` 时为空 |
+| `boundaryViolations` | array<object> | 必填 | **三道防线校验层（路径 B）的运行期可审计兜底输出**：标记引用了产出方「允许使用的 MCP 服务」声明范围外数据来源的结论；无违规时为空数组 `[]`。命中则该结论置信度**下调**并记入 `gaps`（见 `evidence-verifier.md` §C；PRD §6.2 三道防线、附录 B） |
+| `boundaryViolations[].whichConclusion` | string | 必填 | 越界结论标识（关联到 `perConclusion[].statement`） |
+| `boundaryViolations[].detail` | string | 必填 | 越界详情：该结论引用的数据来源落在产出方「允许使用的 MCP 服务」声明范围外 |
+
+> 逐结论校验规则、三级置信度判据细化（含 shallow/漏仓/missingTickets 等下调因素）、`gaps` 完整结构（`missingLink`/`suggestedHint`）与「缺环→发散 hint」映射、synthesizer 9 类场景分析方法，见权威定稿 `design-synthesis-and-verification.md`。
+
+### 2.9 dongmei-ma：最终交付报告（`final_report`）
+
+dongmei-ma 是编排与用户接口层，**不直连任何信息源**（PRD §6.2）；归并上游产物，默认产出中文报告（PRD O9）。
+
+```json
+{
+  "queryId": "q-20260612-001",
+  "round": 1,
+  "from": "dongmei-ma",
+  "to": "user",
+  "payloadType": "final_report",
+  "payload": {
+    "language": "zh",
+    "currentState": "...",
+    "timeline": "...",
+    "rootCause": "...",
+    "confidence": "high",
+    "degraded": false,
+    "gaps": [],
+    "evidenceIndex": [
+      {"type": "commit", "ref": "hdr-delivery-project@a1b2c3d"},
+      {"type": "jira", "ref": "DELI-4521"}
+    ],
+    "roundsUsed": 1,
+    "kbPersisted": true,
+    "kbRef": "queries/2026-06-order-timeout-threshold.md"
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `language` | enum(`zh`/`en`) | 必填 | 交付语言，默认 zh |
+| `currentState` | string | 必填 | 当前实现状态（代码现实） |
+| `timeline` | string | 必填 | 演变时间线（含关联工单号） |
+| `rootCause` | string | 必填 | 根因解释（Jira 业务原因）；降级时可为「证据不足」声明 |
+| `confidence` | enum(高/中/低) | 必填 | 最终置信度（取自 verifier 末轮） |
+| `degraded` | boolean | 必填 | 是否降级交付（2 轮返工后仍不足，PRD O5） |
+| `gaps` | array | 必填 | 降级时标注的具体缺口（缺哪一源/哪一环） |
+| `evidenceIndex` | array<evidence> | 必填 | 全报告出处索引 |
+| `roundsUsed` | number | 必填 | 实际发散返工轮次（0~2） |
+| `kbPersisted` | boolean | 必填 | 是否已沉淀回 KB（充分交付时 true，PRD §4.3 副产品） |
+| `kbRef` | string | 可选 | 沉淀回 KB 的路径 |
+
+> 沉淀动作由 dongmei-ma **委托 kb-keeper** 执行（`/cook` 按 SCHEMA 编译写入 `queries/`，中文 + 英文摘要，PRD O9）；dongmei-ma 自身不写 KB。
+
+#### 2.9.1 dongmei-ma → kb-keeper 沉淀请求（`kb_persist_request`）
+
+```json
+{
+  "queryId": "q-20260612-001", "round": 1,
+  "from": "dongmei-ma", "to": "kb-keeper",
+  "payloadType": "kb_persist_request",
+  "payload": {
+    "rawQuestion": "...",
+    "report": { "currentState": "...", "timeline": "...", "rootCause": "...", "confidence": "high" },
+    "evidenceIndex": [ {"type":"commit","ref":"hdr-delivery-project@a1b2c3d"} ],
+    "writeMode": "cook",
+    "degraded": false,
+    "gaps": []
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `writeMode` | enum(`cook`/`degraded_note`) | 必填 | `cook`=权威结论写 `queries/`；`degraded_note`=轻量降级记录 |
+| `degraded` | boolean | 必填 | 降级交付为 true；kb-keeper 据此区分写入区，不混入权威结论 |
+| `gaps` | array | 可选 | 降级时随附的缺口（写入轻量记录的「缺口」部分） |
+
+- 充分交付：`writeMode=cook`、`degraded=false`，kb-keeper 以 `/cook` 编译沉淀权威结论，回 `{persisted:true, ref:"queries/..."}`。
+- 降级交付（§7.5）：`writeMode=degraded_note`、`degraded=true`，kb-keeper 写「问题+已知线索+缺口」轻量记录并标 degraded，**与权威结论区分**，检索时不当已定论返回。
+- 两种情形**都触发**沉淀（开放点2 已裁定降级也写 KB）。
+
+---
+
+## 3. 全链路数据流（一图）
+
+```
+user ──rawQuestion──▶ dongmei-ma
+                         │ query_plan
+                         ▼
+                     kb-keeper ──kb_clue_set──▶ code-analyst
+                                                   │ (远端: code_fetch_request ⇄ repo-tracer)
+                                                   │ code_location_set (reposInvolved)
+                                                   ▼
+                                              repo-tracer ──repo_timeline(ticketIdsAll)──▶ jira-tracer
+                                                   ▲                                          │ jira_reasons
+                                  (独占 GitHub MCP)│                                          ▼
+                                                   │                                     synthesizer ──synthesis──▶ evidence-verifier
+                                                   │                                                                     │ verification
+                                                   │                                                                     ▼
+                                                   │                                                                 dongmei-ma
+                                                   │                                              sufficient │        │ insufficient
+                                  ◀── 发散重派(round+1, ≤2) ────────────────────────────────────────────────┘        │ 交付 + kb_persist_request──▶ kb-keeper
+```
+
+> 注（teammate 形态，路径 B）：上图为**逻辑数据流**。实际承载方式是 **dongmei-ma 作为协调者 teammate，经共享任务列表 + 消息（SendMessage）驱动**——各 agent 的产物以消息形式发出、对协调链路相关 teammate 可见，dongmei-ma 据此推进下一环，**而非「产物父子返回主控再委派下派」**。`from→to` 表示消息的产出方与目标 teammate（经消息/共享子任务流转），不是 subagent 调用返回。
+
+---
+
+## 4. 双源切换在契约中的体现（PRD §7.4）
+
+过时判定按**「被检索到的相关代码」粒度**，非整仓比较：
+
+- code-analyst 对每个 `location` 给出 `needRemoteFetch`：仅当本地存在仓库、且 repo-tracer 报告该段远端版本更新时为 true。
+- repo-tracer 通过 `code_fetch_response` 附带 `localSha` / `remoteSha` 对比结果（`staleness` 字段：`fresh`/`stale`/`no_local`）。
+- `staleness=stale` 时，dongmei-ma 就**该段代码**向用户发起询问（是否取最新），用户决策后 code-analyst 据返回的 content 重做该段解读。多仓时逐仓判定。
+
+`code_fetch_response`（repo-tracer → code-analyst）追加字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `staleness` | enum(`fresh`/`stale`/`no_local`) | 该段代码本地 vs 远端 |
+| `localSha` / `remoteSha` | string | 对比锚点 |
+| `content` | string | 取到的代码内容（远端模式或确认取最新时） |
+
+> 完整字段（`results` 数组、`remoteLatestCommit`、`notes`、态 C 用户交互、多仓路由、漏仓兜底）与流程时序见权威定稿 `design-source-switching-routing.md`；本节为骨架，双源/路由细节以该文档为准。
+
+---
+
+## 5. 角色归属约束（契约层显式化，PRD §6.2）
+
+下列约束是**契约级硬约束**，违反即视为实现缺陷，由 evidence-verifier / critic 把关：
+
+| 约束 | 契约体现 |
+| --- | --- |
+| **GitHub MCP 独占 repo-tracer** | 仅 repo-tracer 产出 `repo_timeline` / `code_fetch_response`；其他 agent 的 payload 中不得出现直接 GitHub MCP 调用结果。code-analyst 远端取码必须经 `code_fetch_request`。 |
+| **KB 读写独占 kb-keeper** | 仅 kb-keeper 产出 `kb_clue_set`、消费 `kb_persist_request`；其他 agent 不产出 `type:kb` 之外的 KB 写动作，读 KB 也不得绕过。code-analyst 的 evidence 只含 `code`，不含 `kb`。 |
+| **dongmei-ma 不直连信息源** | dongmei-ma 的输入仅来自其他 agent 的 payload + 用户；其 payload 不含 `code`/`commit`/`jira`/`kb` 的一手获取动作，只做归并、调度、返工决策、交付。 |
+| **远端模式 code-analyst 经 repo-tracer 取码** | 见 §2.3.1；`sourceMode∈{remote,mixed}` 时 `locations[].evidence` 的 code 内容来源必须可追溯到一次 `code_fetch_request`。 |
+| **跨仓路由** | `reposInvolved`（code-analyst）→ `reposCovered`（repo-tracer）应一致；不一致由 verifier 标为缺口（漏仓风险，PRD §11.4）。 |
+
+---
+
+## 6. core-ng 识别约定在契约中的落点（PRD §8.2 / §8.3）
+
+- `code_location_set.locations[].coreNgRole` 与 `.entryPoint` 是 core-ng 识别结果的载体。
+- 识别规则**集中在一处**维护（建议：code-analyst 专用 skill 内的「规则表」，单文件可扩展），契约只约定其**输出枚举**，不约定识别逻辑——便于后续扩展其他框架时只增枚举、不改契约。
+- 识别须**双重落地**：`entryPoint.marker` 字段记录的是**目标仓库实际代码标志**（如 `implements MessageHandler<T>` + `bindSubscribe` 实际行），而非框架惯例措辞；当官方约定与实际不符，以实际为准。
+
+### 6.1 已完成的样本仓真实核验（hdr-delivery-project）
+
+> 团队已对参考样本仓 `D:\dev_repository\hdr-delivery-project`（core-ng 多模块微服务，git 历史完整）做实地核验（对齐点 core-dev②已落实）。以下事实已坐实，规则表须据此固化，`code_location_set` 的枚举与示例已与之对齐：
+
+| 识别对象 | 样本仓实际标志（权威） | 对契约的影响 |
+| --- | --- | --- |
+| **REST 入口（形态一）** | `*WebService` 接口在 `{service}-interface` 模块 `api/` 包，注解 import 自 `core.framework.api.web.service.*`；实现 `{service}/web/*WebServiceImpl`，装配 `api().service(Xx.class, bind(XxImpl.class))` | `coreNgRole=RestEntry`，`entryPoint.marker` 记 `api().service(...)` 实际行 |
+| **REST 入口（形态二）** | `Controller` + `http().route(HTTPMethod.X, path, controller::method)` | 同 `RestEntry`，marker 记 route 行；两种形态规则表都要覆盖 |
+| **Kafka 入口** | `implements MessageHandler<T>`（import `core.framework.kafka.MessageHandler`），类在 `kafka/` 包，注册 `{Service}App.bindSubscribe()` → `kafka().subscribe(Topic, Msg.class, bind(Handler.class))` | `coreNgRole=KafkaEntry` |
+| **调用链/装配** | `@Inject`（`core.framework.inject.Inject`）注入 Service；Service 细分 `QueryService` / `OperationService` / **`CreationService`** | `coreNgRole` 枚举须补 **`CreationService`** |
+| **存储（双形态，须注意）** | 同时存在 `db().repository(X.class)`（MySQL 风格）与 `config(MongoConfig).collection(X.class)` / `.view(X.class)`（Mongo） | 规则表须覆盖两种；`coreNgRole=Repository` 可细分 marker 区分 db/mongo |
+| **工单号** | subject 开头 `DELI-\d+`，**分隔符冒号或空格皆有**（`DELI-4520:Fixed`/`DELI-4489 Parallel`）；已见无号提交（容错）与 `Revert "DELI-..."`（功能蒸发场景） | 正则 `^([A-Z]+-\d+)[:\s]`（与 §2.4 / `design-core-ng-recognition.md` §5 一致）；`relax_ticket_regex` 发散项有真实依据 |
+| **扫描排除** | `frontend/` 含 `node_modules` **须排除**；`utility/` 为库模块 | code-analyst 源码兜底/遍历时须排除，避免误定位 |
+
+落点动作：
+- `code_location_set.locations[].coreNgRole` 枚举在 §2.3 基础上**补 `CreationService`**；存储角色 marker 须能区分 `db().repository` vs `Mongo collection/view`。
+- 规则表（建议 code-analyst 专用 skill 内单文件）须把上表「实际标志」作为首要匹配依据，官方 wiki 约定作为补充印证（§8.3 双重落地）。
+- 详见团队记忆 `hdr-delivery-coreng-markers`，以及完整核验定稿 `design-core-ng-recognition.md`（含逐条样本出处与 5 项偏离点：Controller 非 execute 字面名、存储双形态、工单号冒号/空格双分隔、Impl 包位、扫描排除）。
+
+---
+
+## 7. 编排契约：校验返工循环（PRD §4.1 / O5）
+
+### 7.1 循环状态机（dongmei-ma 驱动）
+
+```
+round=0 起算
+  收到 verification:
+    ├─ verdict=sufficient        → 交付(final_report) + 委托 kb-keeper 沉淀 → 结束
+    └─ verdict=insufficient
+         ├─ round < 2            → 选取**有新增维度的**有效 divergeHints 执行发散重派, round+1
+         │                          (无新增维度的重派=无效返工, 不 +1; 凑不出增量则直接降级)
+         └─ round == 2 (已用满)   → 降级交付: final_report.degraded=true, 标注 gaps, confidence=low/中
+                                    (不再沉淀完整结论, 见 §7.5)  → 结束
+```
+
+要点：
+- **teammate 形态语义（路径 B）**：状态机由 **dongmei-ma 作为协调者 teammate 驱动**。文中「发散重派」「委托 kb-keeper 沉淀」「回到 code-analyst 段」均指 **dongmei-ma 经消息（SendMessage）/ 共享子任务**通知相关 teammate 开展新一轮工作，**不是父子 subagent 委派**。状态机判定逻辑、round 计数、≤2 轮上限均不变，仅驱动方式为 teammate 协调（详见 §1 信封 teammate 语义）。
+- **round 从 0 起，最大 2**，即最多 2 次「发散重派」（首轮 round0 + 返工 round1 + 返工 round2 = 共 3 次综合机会；「2 轮发散返工」指 round1、round2 两次重派）。
+- 每轮发散重派由 dongmei-ma 依据 verifier 的 `divergeHints` + `gaps` 选择具体动作（§7.3），不得无策略空转。
+- 降级交付照常出报告，**明确声明「证据不足」并标注具体缺口**（缺哪一源/哪一环），不臆造结论。
+
+> 轮次口径（**T7 已定稿**，critic C1 认可）：「round0=首次综合，round1/round2=两次发散返工，最多 3 次综合」，即**发散重派最多 2 次**，与 PRD O5 一致。锁定。
+
+### 7.2 置信度判据（O4，固化为可判定规则）
+
+verifier 依据 `synthesis.sourcesPresent` + 逐结论出处计算：
+
+| 条件 | 置信度 |
+| --- | --- |
+| 三源（code + git + jira）齐备**且互相印证**，每条结论均挂出处 | **高** |
+| 缺 Jira 业务原因，或仅有 git 时间线（code+git 但无 jira 因果） | **中** |
+| 结论主要依赖推断、缺直接出处（含关键结论无 evidence） | **低** |
+
+附加降级因素（下调一档或标注）：`shallowWarning=true`、`reposCovered ⊊ reposInvolved`（漏仓）、`missingTickets` 非空。
+
+### 7.3 「发散重派」可枚举清单（防空转，对齐点 core-dev①）
+
+verifier 在 `divergeHints` 中给建议，dongmei-ma 据 `gaps.missingSource` 选取执行。这是一张**按维度可枚举的递进策略表**：每个条目都标注「相对上一轮新增的是哪一类证据/范围」，dongmei-ma 据此逐级展开（而非笼统「再搜一次」）。每轮可组合多项：
+
+| hint 枚举 | 触发缺口 | **相对上一轮新增维度**（防空转关键） | 发散动作（dongmei-ma 重派给谁） |
+| --- | --- | --- | --- |
+| `widen_kb_search` | 线索不足/相关度低 | **新增检索范围**：放宽后的关键词集 / 新命中的相邻 `queries/` | 重派 kb-keeper：放宽关键词、`/ask` 改写 query、检索相邻 `queries/` |
+| `kb_to_source_fallback` | KB 未命中或线索空 | **新增证据来源**：从「依赖 KB」切到「源码兜底」这一新来源 | 指示 code-analyst 走源码兜底（`fallbackUsed=true`），不依赖 KB |
+| `expand_code_scope` | 定位点过窄/漏调用链 | **新增调用链节点/路径**：上下游 Controller↔Service↔Repository 中本轮新纳入的符号/文件 | 重派 code-analyst：沿 core-ng 调用链上下扩展，扩大符号/路径范围 |
+| `add_repos` | `reposCovered` 缺仓 / 跨服务隐性调用 | **新增仓库**：本轮补入 `reposInvolved` 的、上一轮未覆盖的 repo | 重派 code-analyst 重做 repo+模块映射补齐 `reposInvolved`；repo-tracer 增加路由仓库 |
+| `extend_git_history` | 时间线过短/疑似 shallow | **新增时间范围/历史深度**：加深的 commit 窗口 / 取消 shallow 后新得的历史 | 重派 repo-tracer：加深历史、扩大 commit 检索窗口（按路径 `git log --follow` 等价） |
+| `relax_ticket_regex` | 大量 `noTicket` / 抽不到号 | **新增抽取范围**：从 subject 扩到 commit body / 放宽正则新命中的工单号 | 重派 repo-tracer：放宽/调整抽取正则（仍可配置），扫描 commit body 而非仅 subject |
+| `chase_linked_tickets` | jira 业务原因缺失/单薄 | **新增工单关联**：顺 `linkedTickets`/parent 追到的、上一轮未取的上游工单 | 重派 jira-tracer：顺 `linkedTickets` 追因果链上游工单 |
+| `retry_missing_tickets` | `missingTickets` 非空 | **新增检索方式**：对查不到的工单改用 JQL/换 key 形式等新途径 | 重派 jira-tracer：对查不到的工单换检索方式/确认工单号抽取是否误差 |
+| `reframe_synthesis` | 结论与证据不匹配/推断过多 | **新增分析视角**：换用不同场景分析 method / 重新对齐三源（非重复同一综合） | 重派 synthesizer：换分析方法 skill、降低推断、明确 `unknowns` |
+
+> **防空转判据（critic 前置定调，硬约束）**：每一轮发散返工**必须有「相对上一轮新增的搜索/源/范围」**——即上表「新增维度」列至少有一项相对上轮确有增量（扩大代码搜索范围、纳入新仓库、追加上下游调用链、新增工单关联、改用源码兜底等）。**任何一轮若只重复上一轮的搜索动作而无新增维度，即视为无效返工，不计入 ≤2 轮额度**（不消耗 round，也不前进——dongmei-ma 必须换出有增量的 hint，否则直接降级交付）。
+>
+> 落地：dongmei-ma 在发起每轮重派前，比对本轮拟用 hint 的「新增维度」与上一轮已执行维度的差集；差集为空则该 hint 作废、另选。`round` 计数**仅对「有新增维度的有效返工」+1**（契约 §7.1）；verifier 跨轮对比 `gaps` 收敛性辅助判断。
+>
+> 其他约束：每轮发散**必须至少选 1 项有效（有新增维度）hint** 且**针对 verifier 标注的缺口**；若 `divergeHints` 为空但 `verdict=insufficient`，dongmei-ma 按 `gaps.missingSource` 兜底映射（code→expand_code_scope/add_repos；git→extend_git_history/relax_ticket_regex；jira→chase_linked_tickets/retry_missing_tickets）。同一维度连续两轮无改善 → 换其他维度；第二轮仍不足 → 干净降级交付并标注缺口（契约 §7.1）。
+
+### 7.4 返工时的信封语义
+
+- 发散重派时 dongmei-ma 发出的下游 payload `round` 设为新轮次值；下游透传。
+- verifier 对比同 `queryId` 跨轮的 `gaps`，若缺口未收敛可在 `divergeHints` 中提示「换策略」。
+
+### 7.5 降级交付与沉淀策略（已裁定，tech-lead 开放点2）
+
+- 充分交付（`sufficient`，置信度高/中）：必沉淀权威结论（`kb_persist_request`，`writeMode=cook`，写 `queries/` 权威区）。
+- **降级交付（2 轮后仍 `insufficient`）：仍写 KB，但只写一条轻量记录「问题 + 已知部分线索 + 明确缺口」，标 `degraded=true`，不写进权威结论区**——避免污染 KB。落地：
+  - `kb_persist_request` 增字段 `degraded:true` / `writeMode=degraded_note`（§2.9.1）；kb-keeper（T10 实现）据此**区分写入**：degraded 记录在 `queries/` 内用**独立 type 或 granularity 标记**与权威结论隔离，不混淆。
+  - **查询期约束（critic C2）**：`/ask` 命中 degraded 记录时**不得当权威结论秒答**，须显式提示「该问题上次查询证据不足、卡在 <缺口>」，仅作「已知线索 + 缺口」参考——既留痕避免重复空转，又绝不污染权威结论。
+  - **SCHEMA 承载**：degraded 区分依赖 KB SCHEMA 能表达「权威 vs degraded」类型/粒度；**需 kb-keeper（T10 / tools-dev）确认 Knowlery `/cook` 的 SCHEMA 可承载此标记**（critic C2 指明的确认项）。
+- 此条已由 tech-lead 拍板（采纳本文原建议）+ critic C2 认可；kb-keeper T10 实现须落实 degraded 区分与查询期提示。
+
+---
+
+## 8. 角色与 payloadType 归属总表
+
+| agent id | 消费(输入 payloadType) | 产出(输出 payloadType) | 信息源归属 |
+| --- | --- | --- | --- |
+| `dongmei-ma` | `user`原始疑问 / `verification` / 各 agent 产物 | `query_plan` / `final_report` / `kb_persist_request` / 返工重派指令 | 编排层，**不直连信息源** |
+| `kb-keeper` | `query_plan` / `kb_persist_request` | `kb_clue_set` / 沉淀确认 | **唯一 KB 读写**（obsidian CLI + Knowlery `/ask` `/cook`） |
+| `code-analyst` | `kb_clue_set` / `code_fetch_response` | `code_location_set` / `code_fetch_request` | 代码内容（本地直读 / 远端经 repo-tracer） |
+| `repo-tracer` | `code_location_set` / `code_fetch_request` | `repo_timeline` / `code_fetch_response` | 本地 Git / **独占多个 GitHub MCP 实例** |
+| `jira-tracer` | `repo_timeline`(ticketIdsAll) | `jira_reasons` | **Jira MCP** |
+| `synthesizer` | `code_location_set`+`repo_timeline`+`jira_reasons` | `synthesis` | 上游三源产物 |
+| `evidence-verifier` | `synthesis`(+全链路产物) | `verification` | 上游全部产物 |
+| `design-tracer`（二期） | UI 相关 + figmaLinks | 设计上下文 payload（二期定义） | Figma MCP（二期） |
+
+---
+
+## 9. 开放点（**全部已由 tech-lead 裁定，2026-06-12**）
+
+1. ~~轮次口径~~ **已裁定**：统一「发散重派最多 2 次」（首轮 round=0，发散各 +1，最大 round=2，最多 3 次综合）。文档已锁此口径（§7.1）。
+2. ~~降级沉淀策略~~ **已裁定（写）**：降级也写 KB，但只写「问题+已知线索+缺口」轻量记录、标 `degraded`、不进权威结论区（§7.5 / §2.9.1 `writeMode=degraded_note`）。kb-keeper（T10）实现区分。
+3. ~~payload 传递形态~~ **已裁定**：采「**自然语言为主 + 结构化字段可无歧义提取，不强制贴 JSON**」，作为 T9–T14 各 agent prompt 实现约束（§0.1）。
+4. ~~analysisMethod 枚举~~ **已裁定**：命名 `<scene-slug>-v1`、单 skill `synthesis-core` 多 method（见 `design-synthesis-and-verification.md` §2/§8）；skill 落项目级 `.claude/skills/`。
+5. ~~code-analyst 规则表落点~~ **已裁定**：单 skill 单文件 = `design-core-ng-recognition.md` 对应的 `coreng-recognition` skill（项目级 `.claude/skills/`），code-analyst 引用、不散在 prompt。
+
+> 运行形态：**路径 B（agent team teammate）已裁定**。本契约信封（§1 teammate 语义）与编排循环（§7 teammate 注）已据此对齐——schema 字段不变，驱动方式为 teammate 任务/消息协调（非 subagent 委派）。

@@ -1,0 +1,39 @@
+// 占位模板 — 共享 .mcp.json（路径 B：agent team teammate 形态）
+// 用途：task #8 骨架 / task #15 引导 skill 据用户探测结果填充项目根 .mcp.json。
+// 规则见 docs/design-mcp-config-shape.md（路径 B 版）。
+//
+// 路径 B 要点：
+//   - 核心 MCP（GitHub 多仓 + Jira）都写在共享 .mcp.json（会话级，全 team 可见）。
+//   - 不走 agent frontmatter 内联——teammate 形态下 frontmatter 的 mcpServers 被忽略。
+//   - 独占靠各 agent 的 tools 白名单（见 docs/templates/agent-tools-allowlist.placeholder.md）。
+//   - 凭据一律 ${DMSEEK_*}，配置零明文。
+{
+  "mcpServers": {
+    // --- GitHub：每仓一条 github-<repoSlug>（区分仓库靠各自 token）---
+    "github-hdr-delivery-project": {
+      "type": "http",
+      "url": "${DMSEEK_GH_MCP_URL:-https://api.githubcopilot.com/mcp/}",
+      "headers": {
+        "Authorization": "Bearer ${DMSEEK_GH_TOKEN_HDR_DELIVERY_PROJECT}"
+      }
+    },
+    // 第二个仓库（占位，按命名约定 §2.1 推导）：
+    // "github-<repoSlug-2>": {
+    //   "type": "http",
+    //   "url": "${DMSEEK_GH_MCP_URL:-https://api.githubcopilot.com/mcp/}",
+    //   "headers": { "Authorization": "Bearer ${DMSEEK_GH_TOKEN_<REPO_SLUG_2_UPPER>}" }
+    // },
+
+    // --- Jira：单实例（通用 HTTP 透传型，见 design-jira-mcp-toolmap.md）---
+    "jira": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@aashari/mcp-server-atlassian-jira"],
+      "env": {
+        "ATLASSIAN_SITE_NAME": "${DMSEEK_JIRA_SITE_NAME}",
+        "ATLASSIAN_USER_EMAIL": "${DMSEEK_JIRA_EMAIL}",
+        "ATLASSIAN_API_TOKEN": "${DMSEEK_JIRA_API_TOKEN}"
+      }
+    }
+  }
+}
