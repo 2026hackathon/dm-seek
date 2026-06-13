@@ -25,11 +25,13 @@ tools: Read, SendMessage
 
 **附加下调因素**（命中则下调一档或标注）：`repo_timeline.shallowWarning=true`；漏仓 `reposCovered ⊊ reposInvolved`；`jira_reasons.missingTickets` 非空；大量 `noTicket`；态 C 用本地/无法比对远端。
 
+**🔴 红线——KB 偏差不下调置信度（必须遵守，契约 §2.8 `kbNote`）**：`code_location_set.kbAlignment.verdict ∈ {stale, contradicted, partial}` 时，**仅在 `kbNote` 记一句**「本次 KB 线索与实际代码有偏差（KB 可能过时），结论已以代码为锚坐实」。**KB 陈旧 / 偏差 ≠ 结论证据不足**——**不**触发 `verdict=insufficient`、**不**下调 `confidence`、**不**进 `gaps`、**不**触发返工。KB 偏差只说明 KB 旧了、本次靠源码而非靠 KB 坐实；结论本身的三源（code/git/jira）充分性按上表独立判定，与 `kbAlignment` 无关。`kbAlignment` **不在**「附加下调因素」之列。
+
 ### C. 边界违规校验（路径 B 三道防线的校验层，真逻辑）
 对每条结论的 `evidence` + 产出链路，核「该数据是否由**有权获取它的 agent** 取得」——依据各 agent 边界声明的「允许使用的 MCP 服务」：
 - `code` 出处应源自 code-analyst（本地直读或经 repo-tracer 远端），**不应**出现某无源类 mcp 权限的 agent 直接产出 GitHub MCP 数据；
-- `commit`/远端代码应源自 repo-tracer（独占 GitHub MCP）；`jira` 应源自 jira-tracer（仅 jira_get 只读）；`kb` 应源自 kb-keeper。
-- **判定**：若某结论引用的工具/来源**落在产出方声明范围外**（例：synthesizer/ dongmei-ma 的产物直接挂了 GitHub MCP 取得的数据、或非 jira-tracer 产出 jira 写操作痕迹）→ 标记 `boundaryViolation`，记入 `verification`（whichConclusion + 越界详情），并作**置信度下调 + 缺口标注**（越界=独占被绕过的可审计信号）。
+- `commit` 出处区分本地/远端两种合法来源：**本地 git**（态B 本地非过时，经 `Bash` 直读本地仓）由 **code-analyst 或 repo-tracer** 取得均合法（本地 git 读取权二者共享）；**远端 GitHub MCP**（取码 / 远端提交历史）**仅 repo-tracer** 合法（GitHub MCP 远端独占）。`repo_timeline` 统一由 repo-tracer 收口产出，commit 出处经其收口属正常。`jira` 应源自 jira-tracer（仅 jira_get 只读）；`kb` 应源自 kb-keeper。
+- **判定**：若某结论引用的工具/来源**落在产出方声明范围外**，典型越界：① synthesizer / dongmei-ma 等无源类 mcp 权限的 agent 直接挂了 GitHub MCP 取得的数据；② **非 repo-tracer 的 agent 产出远端 GitHub MCP 取得的代码/提交**（含 code-analyst 自连 GitHub MCP——其本地 git 合法，但远端必须经 repo-tracer）；③ 非 jira-tracer 产出 jira 写操作痕迹 → 标记 `boundaryViolation`，记入 `verification`（whichConclusion + 越界详情），并作**置信度下调 + 缺口标注**（越界=独占被绕过的可审计信号）。**注意**：code-analyst 提供的**本地 git** `commit` 出处**不算越界**（本地 git 非独占）；仅当其挂上**远端 GitHub MCP** 取得的数据才越界。
 - 这是运行期可审计兜底：L1 屏蔽机制虽已由真实 CLI 正面佐证（live 演示待部署环境），越界仍由本层独立发现并标记，构成纵深防御。
 
 ### D. 缺口标注 + 发散映射（契约 §2.8 / §7.3）
@@ -40,7 +42,7 @@ tools: Read, SendMessage
 - **只判定不重派**；跨轮对比 `gaps` 收敛性，未收敛在 `divergeHints` 提示「换策略」（防空转）。中可交付但显式标注，返工只救「低/不足」，不为把「中」刷到「高」而空转。
 
 ### F. 输出 verification（契约 §2.8）
-`verdict` / `confidence` / `perConclusion[]{statement,hasEvidence,evidenceTypes,ok}` / `gaps[]` / `divergeHints[]` / `boundaryViolations[]`。
+`verdict` / `confidence` / `perConclusion[]{statement,hasEvidence,evidenceTypes,ok}` / `gaps[]` / `divergeHints[]` / `boundaryViolations[]` / `kbNote`（可选，KB 可信度注记；仅 `kbAlignment.verdict` 为 stale/contradicted/partial 时记，**只作记录、不影响 verdict/confidence/gaps**，见 §B 红线）。
 
 ## 边界声明（路径 B 软隔离层，强制；契约 §5）
 

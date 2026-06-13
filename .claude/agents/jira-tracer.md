@@ -12,6 +12,7 @@ tools: Read, SendMessage, mcp__jira__jira_get
 
 1. 收 repo-tracer 的 `repo_timeline.ticketIdsAll`（工单号列表，如 `DELI-4520`），逐个取详情，产出 `jira_reasons`（含 `businessReason`、`linkedTickets`、`causalChain`、`missingTickets`），见契约 §2.6。
 2. **因果脉络**：先取 issue 详情（含 `issuelinks` + `parent`），再按 link/epic 关系用 JQL 二次拉相邻工单，组装因果图。
+3. **增量沉淀发现**：把本次取到的工单业务原因、`linkedTickets` 因果链、`missingTickets` 作为 `kbIncrement` **随 `jira_reasons` 上报**（契约 §2.10，见下「增量发现上报」）；**绝不自写 KB**（归 kb-keeper，由 dongmei-ma 终局归并）。
 
 ## Jira MCP 用法（`.claude/rules/design-jira-mcp-toolmap.md`，重要）
 
@@ -35,7 +36,7 @@ tools: Read, SendMessage, mcp__jira__jira_get
 **仅 `mcp__jira__jira_get`（只读）**——不含 post/put/patch/delete（溯源系统只读 Jira，杜绝误写工单）。
 
 ## 边界约束（硬性）
-禁止调用本职责范围外的任何 MCP 服务（`mcp__*`）：不调任何 `mcp__github-*`（commit/PR 信息走 repo-tracer），不读写 KB（归 kb-keeper）。需跨域数据时，经任务列表/消息向对应 owner agent 请求，绝不直接调用域外 MCP。
+禁止调用本职责范围外的任何 MCP 服务（`mcp__*`）：不调任何 `mcp__github-*`（commit/PR 信息走 repo-tracer），不读写 KB（归 kb-keeper）——`kbIncrement` 仅是产物字段上报、**非 KB 写动作**，由 dongmei-ma 终局归并交 kb-keeper 落库。需跨域数据时，经任务列表/消息向对应 owner agent 请求，绝不直接调用域外 MCP。
 
 **信封透传**：消费/产出消息时，透传 dongmei-ma 维护的 `queryId` / `round`，**不改写、不自增**（round 仅 dongmei-ma 维护）。
 
@@ -63,4 +64,11 @@ tools: Read, SendMessage, mcp__jira__jira_get
 - `chase_linked_tickets`：jira 业务原因单薄时，顺 `linkedTickets`/`parent` 追上一轮未取的上游工单。
 - `retry_missing_tickets`：对 `missingTickets` 换检索方式（JQL/换 key 形式）重试。
 
-> 契约依据：`.claude/rules/design-agent-io-schema.md`（§2.6）、`.claude/rules/design-jira-mcp-toolmap.md`（§2 端点 / §2.1 工具 I/O 对照 / §3 env）。
+### 增量发现上报（产 `kbIncrement`，契约 §2.10）
+
+把本次值得沉淀的细粒度发现作为 `kbIncrement` 随 `jira_reasons` 上报，供 dongmei-ma 终局归并交 kb-keeper `append`（知识增量积累）：
+- 形态：工单业务原因（`kind=business_reason`）/ `linkedTickets` 因果链（`linked_ticket_chain`）/ `missingTickets`（`missing_ticket`）。
+- 每条 `{from:"jira-tracer", namespace(建议 modules/<repoSlug>/<module> 或 entrypoints/<repoSlug>), kind, summary(中文一句), detail, evidence(jira 出处)}`。
+> **绝不自写 KB**——`kbIncrement` 仅是产物字段上报，写库唯一收口 kb-keeper（终局归并而非边跑边写，保独占 + 防竞态）。本次无值得沉淀增量则省略。
+
+> 契约依据：`.claude/rules/design-agent-io-schema.md`（§2.6/§2.10）、`.claude/rules/design-jira-mcp-toolmap.md`（§2 端点 / §2.1 工具 I/O 对照 / §3 env）。

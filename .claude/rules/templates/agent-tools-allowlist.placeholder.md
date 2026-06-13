@@ -11,7 +11,7 @@
 | **repo-tracer** | 本地 git 所需 `Bash` + 全部 `mcp__github-<repoSlug>__*`（N 仓逐个 / 前缀） | 任何 `mcp__jira*`、obsidian/KB 写路径 |
 | **jira-tracer** | `mcp__jira__jira_get`（**仅只读**，见 ../design-jira-mcp-toolmap.md） | `mcp__jira__jira_post/put/patch/delete`、任何 `mcp__github-*` |
 | **kb-keeper** | `Bash`（调 obsidian CLI）+ `Skill`（调 Knowlery /ask /cook）+ `Read`（读自身配置） | 任何 `mcp__github-*` / `mcp__jira*`（不直连代码/Jira 源） |
-| **code-analyst** | 本地直读所需 `Read`/`Grep`/`Glob`；远端取码经 repo-tracer（消息协作，不直连 MCP） | 任何 `mcp__github-*` / `mcp__jira*`（远端取码委托 repo-tracer） |
+| **code-analyst** | 本地直读所需 `Read`/`Grep`/`Glob` + `Bash`（**仅本地仓 git 历史**，态B）；远端取码经 repo-tracer（消息协作，不直连 MCP） | 任何 `mcp__github-*` / `mcp__jira*`（远端取码/远端历史委托 repo-tracer；`Bash` 禁用于任何远端操作） |
 | **dongmei-ma** | 编排/协作类工具（消息、任务）；**不含任何源类 `mcp__`** | 任何 `mcp__github-*` / `mcp__jira*` / obsidian 直接读写（不直连信息源） |
 | **synthesizer** | 综合所需（读上游产物）；不直连源 | 任何源类 `mcp__` |
 | **evidence-verifier** | 校验所需（读上游产物）；不直连源 | 任何源类 `mcp__` |

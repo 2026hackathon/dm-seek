@@ -4,6 +4,9 @@
 
 ## 运行形态：agent team（路径 B，teammate）
 
+**启动**：运行 `claude --agent dongmei-ma`——主会话即是协调者 `dongmei-ma`（`agents/dongmei-ma.md`，兼任团队启动器，无中间层），首次启动一次性建团 + 召唤其余 6 个 teammate（kb-keeper / code-analyst / repo-tracer / jira-tracer / synthesizer / evidence-verifier），随后回归协调者、直接与用户对话。
+> 启动机制（`dongmei-ma.md` frontmatter `initialPrompt` 自动提交）为**待坐实承重假设**（验证步骤见 `../docs/验证-TC-7.6-独占运行时验证步骤.md` 的 TC-7.7）；**若 `initialPrompt` 不生效**，在 `--agent dongmei-ma` 会话内手动执行 `dongmei-ma.md`「§0 启动职责」的建团 + 召唤步骤，效果等价。**不得宣称「一键自动启动已坐实/已生效」**，直到 TC-7.7 在真实环境通过。
+
 7 个 agent 为**平级 teammate**，经**共享任务列表 + 消息**协作；`dongmei-ma` 是**协调者 teammate**（非父节点、非 subagent 委派者）。Claude Code 官方语义下，teammate **不应用** subagent frontmatter 的 `mcpServers` / `skills` 字段——它们从 **project/user settings 加载**（与常规会话相同）。因此：
 
 - 核心 MCP（GitHub 多仓 + Jira）写在**共享 `.mcp.json`**（会话级，全 team 可见）。

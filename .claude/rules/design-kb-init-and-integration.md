@@ -30,12 +30,12 @@
 | 动作 | 唯一执行者 | 经什么 |
 | --- | --- | --- |
 | 读/写 Obsidian KB | **kb-keeper** | obsidian CLI + Knowlery `/ask` `/cook` |
-| 读源码、定位+解读（含遍历入口/调用链） | code-analyst | 本地直读 / 经 repo-tracer |
-| 取 commit 时间线 + 抽工单号 | repo-tracer | 本地 git / GitHub MCP |
+| 读源码、定位+解读（含遍历入口/调用链） | code-analyst | 本地直读 / 态B 本地 git 历史经 Bash / 远端经 repo-tracer |
+| 取 commit 时间线 + 抽工单号（统一收口） | repo-tracer | 态B 本地 git 采用 code-analyst 提供片段（未附自取兜底） / 远端 GitHub MCP；抽工单号、多仓合并收口在 repo-tracer |
 | 取工单业务原因 | jira-tracer | Jira MCP |
 | 编排 KB-init / 查询全流程 | dongmei-ma | 调度上述 agent |
 
-> KB-init skill 自身不读源码、不连 MCP、不写库；它是 dongmei-ma 驱动的一段**编排流程**，各专职动作落到对应 agent。这保证 PRD §6.2「KB 读写独占 kb-keeper」「GitHub MCP 独占 repo-tracer」「dongmei-ma 不直连源」三条约束在建库路径上同样成立。
+> KB-init skill 自身不读源码、不连 MCP、不写库；它是 dongmei-ma 驱动的一段**编排流程**，各专职动作落到对应 agent。这保证 PRD §6.2「KB 读写独占 kb-keeper」「GitHub MCP（远端）独占 repo-tracer」「dongmei-ma 不直连源」三条约束在建库路径上同样成立。注：本地 git 历史读取权 code-analyst/repo-tracer 共享（态B 经 Bash 直读本地仓），独占只针对远端 GitHub MCP。
 
 ---
 

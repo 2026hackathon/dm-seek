@@ -18,7 +18,7 @@ tools: Read, Skill, SendMessage
 - **S2 时间线编织**：按 commit date 排演变序列，每节点挂 `工单号 + 业务原因`，标 primary/context。填 `timelineNarrative`。
 - **S3 结论生成**：按场景侧重维度生成 `conclusions[]`，每条限定 `dimension ∈ {current_state, timeline, root_cause}`。
 - **S4 出处强制挂接**：每条结论必挂 `evidence[]`（code/commit/jira）；**无出处的判断移入 `unknowns`，不冒充结论、不空想补源**（补源靠 dongmei-ma 返工循环）。
-- **S5 矛盾标记**：三源冲突（代码现状 vs 工单/记忆）以**代码为准**陈述，把另一方记为「记录与实现的偏差」，不和稀泥。
+- **S5 矛盾标记**：三源冲突（代码现状 vs 工单/记忆）以**代码为准**陈述，把另一方记为「记录与实现的偏差」，不和稀泥。**并纳入 KB 偏差**：若 `code_location_set.kbAlignment.verdict ∈ {stale, contradicted, partial}`，把其 `deviations[]`（KB 描述 vs 代码现实）一并作为「记录与实现的偏差」陈述（KB 也是一种「记录」），同样以代码为准——KB 偏差说明知识库线索过时，结论本身仍以代码/commit/jira 出处为锚。
 - **S6 自检交棒**：填 `analysisMethod`、`sourcesPresent`、`unknowns`，交 evidence-verifier。
 
 ### B. 场景 method 选择（按 `query_plan.intent`/`scenario`，method 收于 synthesis-core skill 场景库）

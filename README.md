@@ -10,8 +10,8 @@
 | --- | --- | --- |
 | `dongmei-ma` | 编排、用户接口、驱动校验返工循环、默认中文交付 | 不直连信息源 |
 | `kb-keeper` | 唯一 KB 读写口（Obsidian + Knowlery `/ask` `/cook`） | 知识库 |
-| `code-analyst` | core-ng 代码定位+解读、repo+模块映射、KB 未命中源码兜底 | 代码内容（本地 / 远端经 repo-tracer） |
-| `repo-tracer` | Git/GitHub 网关、独占 GitHub MCP、多仓路由、时间线+抽工单号 | 本地 Git / 多个 GitHub MCP 实例 |
+| `code-analyst` | core-ng 代码定位+解读、repo+模块映射、KB 未命中源码兜底、态B 本地 git 历史经 Bash | 代码内容（本地 / 远端经 repo-tracer）+ 态B 本地 git（与 repo-tracer 共享） |
+| `repo-tracer` | Git/GitHub 网关、独占 GitHub MCP（远端）、多仓路由、统一收口时间线+抽工单号 | 本地 Git（与 code-analyst 共享）/ 多个 GitHub MCP 实例（远端独占） |
 | `jira-tracer` | 取工单业务原因与因果脉络（Jira MCP，只读） | Jira MCP |
 | `synthesizer` | 综合 code+git+jira → 结论（9 类场景，分析方法沉淀为 skill） | 上游三源产物 |
 | `evidence-verifier` | 出处校验 + 置信度（高/中/低）+ 不足触发发散返工 | 上游全部产物 |
@@ -69,12 +69,14 @@ dm-seek/
    - Jira：`DMSEEK_JIRA_SITE_NAME` / `DMSEEK_JIRA_EMAIL` / `DMSEEK_JIRA_API_TOKEN`
    - 设完变量后**重启 Claude Code / 终端**，`${VAR}` 才能展开。
 3. **多仓**：每个 git repo 对应 `.mcp.json` 里一个 `github-<repoSlug>` 实例（独立 token）；引导 skill 增量追加，并同步把对应 `mcp__github-<repoSlug>__*` 工具加入 `repo-tracer` 的 `tools` 白名单。
-4. **提问**：向 `dongmei-ma` 提一句自然语言疑问，team 自动协作并交付带置信度的中文报告。
+4. **启动团队**：运行 `claude --agent dongmei-ma`——主会话即是协调者 `dongmei-ma`（无中间层），首次启动自动建团 + 召唤其余成员（kb-keeper / code-analyst / repo-tracer / jira-tracer / synthesizer / evidence-verifier），随后回归协调者角色。
+   > 启动机制（`dongmei-ma.md` 的 frontmatter `initialPrompt` 自动提交）为**待坐实承重假设**（验证步骤见 `docs/验证-TC-7.6-独占运行时验证步骤.md` 的 TC-7.7）；**若 `initialPrompt` 不生效**，则在 `--agent dongmei-ma` 会话内手动执行 `dongmei-ma.md`「§0 启动职责」的建团 + 召唤步骤，效果等价。
+5. **提问**：团队就绪后直接向 `dongmei-ma` 提一句自然语言疑问，team 自动协作并交付带置信度的中文报告。
 
 ## 安全与独占声明（重要，诚实声明）
 
 - **凭据零明文**：任何配置文件（`.mcp.json` / agent `.md` / settings）只允许 `${VAR}` 占位，绝不出现真实 token。凭据全在 OS 环境变量。请勿提交含真实 token 的临时设置脚本。
-- **源独占是策略级约束、非物理隔离**：本项目为 agent team（teammate 形态）。Claude Code 语义下，MCP 写在共享 `.mcp.json`，**会话层面对全 team 可见**；「GitHub MCP 独占 repo-tracer、Jira MCP 独占 jira-tracer、其他 agent 不直连源」靠**各 agent 的 `tools` 白名单**实现（白名单对 teammate 生效）——即只有被授予对应 `mcp__` 工具的 agent 能调用。这是**策略约束**，不是进程级物理隔离。
+- **源独占是策略级约束、非物理隔离**：本项目为 agent team（teammate 形态）。Claude Code 语义下，MCP 写在共享 `.mcp.json`，**会话层面对全 team 可见**；「GitHub MCP（远端）独占 repo-tracer、Jira MCP 独占 jira-tracer、其他 agent 不直连源」靠**各 agent 的 `tools` 白名单**实现（白名单对 teammate 生效）——即只有被授予对应 `mcp__` 工具的 agent 能调用。这是**策略约束**，不是进程级物理隔离。**独占只针对远端源类 MCP**：本地 git 历史经 `Bash` 直读、无远端凭据风险，读取权由 code-analyst 与 repo-tracer 共享（态B），不在独占范围；远端 GitHub MCP 始终仅 repo-tracer。
   - **per-agent 独占只有 `tools` 白名单这一层**：经核实，`deniedMcpServers`/`disabledMcpjsonServers` 等 MCP server 级策略均为会话级/组织级「一刀切」，**无 per-agent 粒度**——用它兜底会连合法的 repo-tracer/jira-tracer 一起禁掉，故本配置包**不挂 `deniedMcpServers` 作兜底**。部署方可选用 managed `allowedMcpServers` 锁定「只允许计划内 server」作 org 治理（防越界新增，不误伤授权 agent）。该承重假设的运行时验证与「证伪则升级」声明详见 `.claude/README.md`。
 - **Jira 只读**：jira-tracer 仅授予 `mcp__jira__jira_get`，不授予写工单的工具。
 

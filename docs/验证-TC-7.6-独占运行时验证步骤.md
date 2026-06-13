@@ -112,3 +112,65 @@
 5. 全被拒 → L1 坐实改 PASS；任一成功 → 降级软隔离 + 升级决策。
 6. 制造一次越界 → 看 `verification.boundaryViolations[]` 是否标记（校验层兜底）。
 7. 全程证据**勿含明文 token**。
+
+---
+
+# TC-7.7 — dongmei-ma `initialPrompt` 自动启动验证步骤（部署/导入方自验）
+
+| 项目 | 内容 |
+| --- | --- |
+| 文档类型 | 可执行验证步骤（在真实环境坐实 dongmei-ma 一键自动启动的承重假设） |
+| 对应对象 | `.claude/agents/dongmei-ma.md`（协调者兼团队启动器，含 frontmatter `initialPrompt`） |
+| 命门 | 「`claude --agent dongmei-ma` 启动时 `initialPrompt` 是否被引擎自动提交执行（自动建团 + 召唤其余 6 成员）」=**未坐实的承重假设** |
+| 为何在你环境跑 | 开发会话无法验证 `--agent` 启动时 frontmatter `initialPrompt` 的真实行为；须在真实 Claude Code 运行时坐实 |
+| 诚实界限 | 机制未坐实 **≠** 已生效；正向不成立则**降级手动启动**（等价可用，仅少「自动」），据实记录、勿写「一键自动已坐实/已生效」 |
+
+> **背景一句话**：用户直接 `claude --agent dongmei-ma`（无 launcher 中间层），dongmei-ma 兼任团队启动器——用 frontmatter `initialPrompt` 意图实现「启动即自动建团 + spawn 其余 6 个 teammate，随后回归协调者」。该字段是否被当前 Claude Code 版本在 `--agent` 启动时自动提交执行，本项目尚未实测坐实（同 TC-7.6 性质）。本步骤验这一点，并确认降级路径可用。
+
+## 0. 前置条件
+
+- [ ] **导入 dm-seek 配置包**：`.claude/agents/` 下含 7 个 agent 定义（dongmei-ma + 6 teammate）；`.claude/skills/`、`.mcp.json` 到位（MCP 可不连——本验证只测启动编排，不测溯源）。
+- [ ] **`claude` CLI 可用**：`claude --version` 正常。
+- [ ] 了解 `dongmei-ma.md` 的「§0 启动职责」与 `initialPrompt` 正文（手动降级时按其清单执行）。
+
+## 1. 正向验证：`initialPrompt` 自动执行
+
+1. 在项目根运行 `claude --agent dongmei-ma`。
+2. **不输入任何内容**，观察启动后是否**自动**发生：
+   - 用 TeamCreate 建团 `dm-seek`；
+   - 按依赖顺序 spawn 其余 6 个 teammate（kb-keeper → code-analyst → repo-tracer → jira-tracer → synthesizer → evidence-verifier）；
+   - 输出「dm-seek 团队已就绪……请输入你的查询」，并回归协调者角色。
+
+**判定**：
+
+| 观测结果 | 判定 | 命门 |
+| --- | --- | --- |
+| 启动后**无需手动输入**即自动建团 + 召唤 6 成员 + 报就绪 + 回归协调者 | **`initialPrompt` 自动启动成立** | **CLOSE（PASS）** |
+| 启动后**停在空会话**（未自动建团/召唤），需手动触发 | `initialPrompt` 未被自动提交 → 转 §2 降级验证 | 证伪 → 降级手动 |
+
+## 2. 负向降级：手动执行等价验证
+
+若 §1 正向不成立：
+
+1. 在 `--agent dongmei-ma` 会话内，**手动**执行 `dongmei-ma.md`「§0 启动职责」/ `initialPrompt` 正文的步骤（建团 + 按序 spawn 6 teammate + 报就绪 + 回归协调者）。
+2. 观察是否能正常建团 + 召唤 6 成员 + 报就绪。
+
+**判定**：
+
+| 观测结果 | 判定 |
+| --- | --- |
+| 手动执行后团队正常拉起、成员就绪、可接收查询 | **降级手动启动可用**——功能不依赖 `initialPrompt` 自动生效；README 标「手动启动」 |
+| 手动执行仍拉不起团队 | 启动编排本身有缺陷（非 `initialPrompt` 问题），回修 `dongmei-ma.md` §0 |
+
+## 3. 总判定与处置
+
+- **§1 正向成立** → `initialPrompt` 自动启动坐实，命门 **CLOSE**：在测试报告 / README 把 TC-7.7 状态由「机制未坐实、待部署环境」改为 PASS，README 启动说明保留「自动」表述。
+- **§1 证伪、§2 降级可用** → 自动机制在当前引擎不可得，但**功能等价可用**：README 启动说明改为「若 `initialPrompt` 不生效则手动执行 dongmei-ma.md §0 启动职责步骤」，`dongmei-ma.md` 诚实声明保留。**不得宣称自动已生效。**
+- 无论哪个分支，**三道防线 / 独占边界不受影响**：dongmei-ma 不持任何源类 MCP、`TeamCreate`/`Agent` 非源类工具且仅用于召唤、不绕链路、独占归属不变。
+
+## 附：一句话执行清单（TC-7.7）
+
+1. `claude --agent dongmei-ma`，不输入 → 看是否自动建团+召唤 6 成员+回归协调者。
+2. 自动成立 = PASS（CLOSE）；停在空会话 = 转手动。
+3. 手动执行 §0 启动职责步骤 → 能拉起团队 = 降级可用。
+4. 据实记录，勿写「一键自动已坐实/已生效」。

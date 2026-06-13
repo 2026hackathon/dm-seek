@@ -18,15 +18,17 @@
 1. 用户提出一句自然语言疑问。
 2. **dongmei-ma**（协调者 teammate）解析疑问，拆解子任务、派发到共享任务列表并以消息驱动协作。
 3. **kb-keeper** 查询知识库（KB），给线索（候选模块 / 路径 / 核心类 + 出处引用）。
-4. **code-analyst** 据 KB 线索**定位具体代码并解读**（core-ng）：本地有仓库直读；无本地仓库经 repo-tracer 取代码；KB 未命中回源码兜底。
-5. **repo-tracer** 给**提交时间线**，并从 commit subject **抽取 Jira 工单号**。
+4. **code-analyst** 据 KB 线索**定位具体代码并解读**（core-ng）：本地有仓库直读（代码内容 + 态B 本地 git 历史经 Bash 直读，作本地 git 证据附给 repo-tracer）；无本地仓库经 repo-tracer 取代码；KB 未命中回源码兜底。**并审视 KB 匹配性**：拿到 KB 线索后先读实际代码，比对「KB 描述 vs 代码现实」（KB 可能粗粒度或过时），以代码为锚产出 `kbAlignment`（匹配度 + 逐条偏差，契约 §2.3.2），供 synthesizer 标偏差、evidence-verifier 作 KB 可信度注记（KB 偏差 ≠ 结论缺证据，不下调置信度）。
+5. **repo-tracer** 统一收口**提交时间线**（态B 采用 code-analyst 提供的本地 git 片段、未附则自取，远端经 GitHub MCP），并从 commit subject **抽取 Jira 工单号**。
 6. **jira-tracer** 经 Jira MCP 取对应工单的**业务原因**与因果脉络。
 7. **synthesizer** 综合 code + git + jira 三源，产出**结论**。
 8. **evidence-verifier** 校验证据充分性并给**置信度（高 / 中 / 低）**：充分 → dongmei-ma 交付 + kb-keeper 沉淀回 KB；不足 → dongmei-ma 发散重派、扩大搜索后重新综合（回第 4~7 步）。
 
+> **多 agent 增量沉淀（知识增量积累）**：除终局由 dongmei-ma 委托 kb-keeper 沉淀最终结论外，code-analyst / repo-tracer / jira-tracer 在本次调查中各自把值得沉淀的**增量发现**（KB 偏差校正、KB 未覆盖的入口/调用链、新 commit/工单线索、业务原因因果链等）作为产物字段 `kbIncrement` 上报；dongmei-ma **终局统一归并**进 `kb_persist_request.increments[]`，由 kb-keeper `append` 写入 `modules/`/`entrypoints/` 细粒度增量（与 `queries/` 权威结论区分）。三 agent **绝不自写 KB**（KB 写独占 kb-keeper），终局归并而非边跑边写——保独占 + 防并发竞态 + 只沉淀经校验内容。契约 §2.10 / §2.9.1。
+
 ### 交付输出（final_report）
 
-当前实现状态（代码现实）+ 演变时间线（含工单号）+ 根因解释（Jira 业务原因；降级时为「证据不足」声明）+ 置信度（高 / 中 / 低）+（降级时）缺口标注。结论自动沉淀至 KB `queries/`，同类问题下次秒答。
+当前实现状态（代码现实）+ 演变时间线（含工单号）+ 根因解释（Jira 业务原因；降级时为「证据不足」声明）+ 置信度（高 / 中 / 低）+（降级时）缺口标注。结论自动沉淀至 KB `queries/`，同类问题下次秒答；多 agent 增量发现随终局沉淀 append 至 `modules/`/`entrypoints/`。
 
 ## §3 九类应用场景
 
@@ -52,8 +54,8 @@
 | --- | --- | --- |
 | `dongmei-ma` | 协调者 teammate（类似 tech-lead）：用户接口、解析疑问、拆解派发任务、消息驱动校验返工循环、默认产出中文报告交付；非他人之父、不委派独占下游 | **无**（不直连任何信息源） |
 | `kb-keeper` | 边界唯一 Obsidian KB 读写口：给线索 + 结论沉淀回写；不读源码。集成 = obsidian CLI（search/read/create/append）+ Knowlery `/ask` `/cook` | **无 `mcp__`**（KB 经 obsidian CLI / Knowlery，非 mcp） |
-| `code-analyst` | 据 KB 线索定位并解读 core-ng 代码；KB 未命中源码兜底；KB 初始化时遍历入口/调用链；定位映射到具体 repo+模块 | **无**（本地直读；远端取码经 repo-tracer） |
-| `repo-tracer` | Git/GitHub 网关，**边界独占全部 GitHub MCP 实例**；本地读 git 历史，远端取码+提交历史；管理 N 个按仓划分的 GitHub MCP 实例；始终从 commit subject 抽工单号 | `mcp__github-*`（全部 GitHub MCP 实例）+ 本地 git |
+| `code-analyst` | 据 KB 线索定位并解读 core-ng 代码；KB 未命中源码兜底；KB 初始化时遍历入口/调用链；定位映射到具体 repo+模块；态B 经 Bash 直读本地 git 历史作本地 git 证据 | **无 `mcp__`**（本地代码直读 + 本地 git 经 Bash；远端取码/远端历史经 repo-tracer，绝不自连 GitHub MCP） |
+| `repo-tracer` | Git/GitHub 网关，**边界独占全部 GitHub MCP 实例（远端）**；远端取码+远端提交历史；统一收口产出提交时间线 `repo_timeline` + 抽工单号；态B 本地 git 信任 code-analyst 提供片段、未附则自取兜底；管理 N 个按仓划分的 GitHub MCP 实例 | `mcp__github-*`（全部 GitHub MCP 实例，**远端独占**）+ 本地 git（经 Bash，**与 code-analyst 共享、非独占**） |
 | `jira-tracer` | 经 Jira MCP 取工单业务原因与多工单因果脉络 | `mcp__jira__jira_get`（**只读**） |
 | `synthesizer` | 综合 code+git+jira → 结论（9 类场景）；分析方法沉淀为可复用 skill | **无**（仅消费上游三源产物） |
 | `evidence-verifier` | 校验每条结论是否挂出处 + 输出置信度 + 边界违规校验 + 不足触发发散返工 | **无**（仅消费上游全部产物） |
@@ -64,7 +66,7 @@
 
 teammate 形态下 MCP 实例写在共享 `.mcp.json`、**会话层面对全 team 可见**；「独占」靠以下三道防线叠加：
 
-1. **L1 技术层（`tools` 白名单）**：各 agent frontmatter `tools` 白名单只含本域工具——仅 repo-tracer 含 `mcp__github-*`；仅 jira-tracer 含 `mcp__jira__jira_get`（只读）；其余 agent 不含任何源类 `mcp__`。**per-agent 独占在当前 Claude Code 仅 L1 一个原生机制**（`deniedMcpServers` 是组织/会话级一刀切、无 per-agent 粒度、会误伤，故不挂作兜底）。
+1. **L1 技术层（`tools` 白名单）**：各 agent frontmatter `tools` 白名单只含本域工具——**独占对象为远端源类 MCP**：仅 repo-tracer 含 `mcp__github-*`（远端 GitHub）；仅 jira-tracer 含 `mcp__jira__jira_get`（只读）；其余 agent 不含任何源类 `mcp__`。**本地 git 非独占**：code-analyst 与 repo-tracer 均含 `Bash` 以读本地仓 git 历史（态B），本地 git 无远端凭据风险、不在独占范围；GitHub MCP（远端）始终仅 repo-tracer。**per-agent 独占在当前 Claude Code 仅 L1 一个原生机制**（`deniedMcpServers` 是组织/会话级一刀切、无 per-agent 粒度、会误伤，故不挂作兜底）。
 2. **声明层（每 agent 固定区块）**：每个 agent 定义含三段固定区块——`## 职责范围` / `## 允许使用的 MCP 服务`（与 L1 白名单一致）/ `## 边界约束`（硬性：禁调领域外 `mcp__`，跨域需求经任务列表 / 消息向 owner agent 请求，绝不直连）。
 3. **校验层（evidence-verifier 运行期兜底）**：校验结论时标记「结论引用了声明范围外工具 / 数据来源」的边界违规。
 
@@ -72,7 +74,7 @@ teammate 形态下 MCP 实例写在共享 `.mcp.json`、**会话层面对全 tea
 
 ### §4.3 关键归属
 
-- GitHub MCP 独占 repo-tracer；远端模式下 code-analyst 经 repo-tracer 取码（自身禁调 GitHub MCP）。
+- **GitHub MCP（远端）独占 repo-tracer**；远端模式下 code-analyst 经 repo-tracer 取码与取远端历史（自身禁调 GitHub MCP）。**本地 git 历史读取权 code-analyst/repo-tracer 共享**（态B 经 Bash 直读本地仓）：code-analyst 取到的本地 git 片段经 `code_location_set.localGitTimeline` 附给 repo-tracer，repo-tracer 信任采用、统一收口产出 `repo_timeline`（抽工单号仍归 repo-tracer）。独占只针对远端 GitHub MCP。
 - Obsidian KB 读写唯一收口 kb-keeper。
 - dongmei-ma / synthesizer / evidence-verifier 不直连任何源。
 
@@ -112,7 +114,7 @@ teammate 形态下 MCP 实例写在共享 `.mcp.json`、**会话层面对全 tea
 | 本地仓库状态（针对被检索到的相关代码） | 行为 |
 | --- | --- |
 | 无本地仓库 | 全程 GitHub MCP（远端模式），code-analyst 经 repo-tracer 取代码 |
-| 有本地仓库，相关代码段不过时 | 使用本地仓库 |
+| 有本地仓库，相关代码段不过时（态B） | 使用本地仓库：code-analyst 直读本地代码内容 + 经 Bash 直读本地 git 历史（作本地 git 证据，随 `localGitTimeline` 附给 repo-tracer 收口；repo-tracer 未收到则自取兜底）。本地 git 不经 GitHub MCP |
 | 有本地仓库，相关代码段远端版本更新 | **就该段代码询问用户**是否取最新（非整仓比较；dongmei-ma 唯一询问者，合并询问） |
 
 多仓场景按每个涉及的仓库分别判定；repo-tracer 据 code-analyst 的 repo+模块映射路由到对应本地仓库或 GitHub MCP 实例。

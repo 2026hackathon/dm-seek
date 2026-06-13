@@ -32,7 +32,7 @@
 | # | 本地仓库状态（针对**该相关代码段**所在仓库） | 来源行为 | code-analyst 取码途径 |
 | --- | --- | --- | --- |
 | A | **无该仓本地副本** | **远端模式**：全程经 repo-tracer 走 GitHub MCP 取代码与历史 | `code_fetch_request`（§2.3.1）→ repo-tracer |
-| B | **有本地仓，且该代码段不过时**（远端未比本地新，或离线/无远端可比） | **用本地**：code-analyst 直读本地文件 | 直接读本地路径，不触发 fetch |
+| B | **有本地仓，且该代码段不过时**（远端未比本地新，或离线/无远端可比） | **用本地**：code-analyst 直读本地文件**及本地 git 历史** | 代码内容直读本地路径，不触发 fetch；**本地 git 历史经 `Bash`（`git -C <repoPath> log`）直读**，随 `code_location_set.localGitTimeline` 附给 repo-tracer，repo-tracer 信任采用、统一收口产出 `repo_timeline`（抽工单号仍归 repo-tracer；未附则 repo-tracer 自取兜底） |
 | C | **有本地仓，但该代码段远端版本更新** | **就该段询问用户**是否取远端最新（**非整仓比较**） | 用户同意 → `code_fetch_request` 取该段最新；拒绝 → 用本地并在报告标注 |
 
 > 三态以**仓库**为粒度选择「有无本地」，以**代码段**为粒度判定「过时与否」。即同一仓库内，A/B 由该仓是否存在本地副本决定；B vs C 由具体被检索代码段的新旧决定。一次查询的不同 location 可分别落入不同态。
@@ -203,8 +203,8 @@ repo_timeline.reposCovered  应 == reposInvolved（缺仓=漏仓风险，verifie
 
 ## 7. 对下游任务的契约要点
 
-- **#11 code-analyst**：每个 location 标 `sourceMode` 与 `needRemoteFetch`；以代码实际定位权威填 `repo` 与 `reposInvolved`；识别 `api().client(...)` 等跨服务调用补仓；态 A 走远端、态 B 直读、态 C 上报待 dongmei-ma 决策。
-- **#12 repo-tracer**：实现 §2.2 按文件 staleness 比对（不整仓比较）；按 `design-mcp-config-shape.md` §2.3 映射表路由本地/实例；回 `reposCovered`、标 `unconfigured`；`code_fetch_response` 按 §2.4 结构。
+- **#11 code-analyst**：每个 location 标 `sourceMode` 与 `needRemoteFetch`；以代码实际定位权威填 `repo` 与 `reposInvolved`；识别 `api().client(...)` 等跨服务调用补仓；态 A 走远端、态 B 直读（代码内容 + **本地 git 历史经 `Bash`，随 `localGitTimeline` 附给 repo-tracer**）、态 C 上报待 dongmei-ma 决策。**本地 git 仅限本地仓直读，远端取码/远端历史仍经 repo-tracer，绝不自连 GitHub MCP。**
+- **#12 repo-tracer**：实现 §2.2 按文件 staleness 比对（不整仓比较）；按 `design-mcp-config-shape.md` §2.3 映射表路由本地/实例；回 `reposCovered`、标 `unconfigured`；`code_fetch_response` 按 §2.4 结构。**态B 信任 code-analyst 提供的 `localGitTimeline`、不重复跑 git log；未附则经 `Bash` 自取兜底；无论来源，`repo_timeline` 由 repo-tracer 统一收口产出（抽工单号、多仓合并）。过时判定的本地侧 sha 比对始终由 repo-tracer 执行。**
 - **#9 dongmei-ma**：态 C 合并询问用户（§3）；`staleDefault` 开关；漏仓/未配置/过时纳入报告缺口与 verifier 输入。
 - **#15 引导 skill**：维护 §2.3 映射表（仓↔本地路径↔实例↔token 变量）；增量配置缺失仓。
 
