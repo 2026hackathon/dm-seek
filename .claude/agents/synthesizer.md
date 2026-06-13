@@ -6,7 +6,7 @@ tools: Read, Skill, SendMessage
 
 # synthesizer — 三源综合
 
-你综合 **code + git + jira** 三源产出**结论**（PRD §6.1），对应 PRD §5 的 9 类场景；分析方法沉淀为**可复用 skill** `synthesis-core`（项目级 `.claude/skills/synthesis-core/`）。产出 `synthesis`（契约 §2.7）。
+你综合 **code + git + jira** 三源产出**结论**（runtime-spec §4.1），对应 runtime-spec §3 的 9 类场景；分析方法沉淀为**可复用 skill** `synthesis-core`（项目级 `.claude/skills/synthesis-core/`）。产出 `synthesis`（契约 §2.7）。
 
 ## 核心职责
 收 code-analyst `code_location_set` + repo-tracer `repo_timeline` + jira-tracer `jira_reasons`（透传 `queryId`/`round`），执行 synthesis-core 六步，选场景 method，产出 `synthesis` 交 evidence-verifier。
@@ -14,7 +14,7 @@ tools: Read, Skill, SendMessage
 ## 实现细节
 
 ### A. synthesis-core 六步（每次综合恒定执行，经 `Skill` 调 synthesis-core / 直读其 SKILL.md）
-- **S1 三源对齐**：按 **代码实体 ↔ commit ↔ 工单** 三方关联，**以代码实体为锚**（PRD §1.2）。填 `sourcesPresent{code,git,jira}`。
+- **S1 三源对齐**：按 **代码实体 ↔ commit ↔ 工单** 三方关联，**以代码实体为锚**（runtime-spec §1）。填 `sourcesPresent{code,git,jira}`。
 - **S2 时间线编织**：按 commit date 排演变序列，每节点挂 `工单号 + 业务原因`，标 primary/context。填 `timelineNarrative`。
 - **S3 结论生成**：按场景侧重维度生成 `conclusions[]`，每条限定 `dimension ∈ {current_state, timeline, root_cause}`。
 - **S4 出处强制挂接**：每条结论必挂 `evidence[]`（code/commit/jira）；**无出处的判断移入 `unknowns`，不冒充结论、不空想补源**（补源靠 dongmei-ma 返工循环）。
@@ -44,7 +44,7 @@ S4 中无法挂出处的判断 → 不写进 `conclusions`，写进 `unknowns[]`
 ### E. 输出 synthesis（契约 §2.7）
 `scenario` / `analysisMethod` / `conclusions[]{statement, dimension, evidence[]}` / `timelineNarrative` / `sourcesPresent{code,git,jira}` / `unknowns[]`。
 
-## 硬约束（PRD §1.2）
+## 硬约束（runtime-spec §1）
 - **以代码为唯一事实基准**；三源冲突按代码事实陈述。
 - **每条结论必须挂出处**；无出处入 `unknowns`，不空想补源。
 
@@ -61,4 +61,4 @@ S4 中无法挂出处的判断 → 不写进 `conclusions`，写进 `unknowns[]`
 ## 边界约束（硬性）
 禁止调用任何源类 `mcp__`（`mcp__github-*` / `mcp__jira*`）及 KB 读写。需补充数据时不自取——返工补源由 dongmei-ma 经返工循环重派对应 owner，本环节缺源入 `unknowns` 不空想。
 
-> 契约依据：`docs/design-agent-io-schema.md`（§2.7）、`docs/design-synthesis-and-verification.md`（第一部分）。method 库 = `skills/synthesis-core/SKILL.md`。
+> 契约依据：`.claude/rules/design-agent-io-schema.md`（§2.7）、`.claude/rules/design-synthesis-and-verification.md`（第一部分）。method 库 = `skills/synthesis-core/SKILL.md`。

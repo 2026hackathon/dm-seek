@@ -5,7 +5,7 @@ description: 马冬梅计划知识库初始化——以 core-ng 的 REST 入口(
 
 # kb-init — KB 初始化（粗粒度建库）
 
-> 依据 `docs/design-kb-init-and-integration.md`（权威流程）+ `docs/design-core-ng-recognition.md`（入口/调用链识别规则）。本 skill 是 **dongmei-ma 编排下的一段流程**，**不直接读源码/连 MCP/写库**——各专职动作落到对应 agent，写库一律经 kb-keeper。
+> 依据 `.claude/rules/design-kb-init-and-integration.md`（权威流程）+ `.claude/rules/design-core-ng-recognition.md`（入口/调用链识别规则）。本 skill 是 **dongmei-ma 编排下的一段流程**，**不直接读源码/连 MCP/写库**——各专职动作落到对应 agent，写库一律经 kb-keeper。
 
 ## 何时用
 - 用户尚无知识库，或希望对某仓/某服务补充建库。**可选、不设硬性上限**，由用户用 scope 控制范围。
@@ -29,7 +29,7 @@ description: 马冬梅计划知识库初始化——以 core-ng 的 REST 入口(
 7. **幂等**：已存在条目 → append/更新，不重复建；记 init 元数据（范围、时间、commit HEAD）到 `_meta/<repoSlug>.init.md`。
 
 ## 多仓 / 双源
-- **多仓分别 init**，KB 内按 `<repoSlug>/` 命名空间隔离；repo+模块映射沿用 `docs/design-mcp-config-shape.md` §2.3。
+- **多仓分别 init**，KB 内按 `<repoSlug>/` 命名空间隔离；repo+模块映射沿用 `.claude/rules/design-mcp-config-shape.md` §2.3。
 - **双源**：研发用户本地仓库（code-analyst 直读）；非研发经 repo-tracer → GitHub MCP 取码。建库期不做过时判定（记 commit HEAD 作基线）。
 
 ## 边界

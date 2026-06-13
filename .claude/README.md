@@ -1,6 +1,6 @@
 ﻿# dm-seek 团队配置（.claude/）— 安全与独占诚实声明
 
-本目录是马冬梅计划（dm-seek）的 Claude Code 成品 team 配置：`agents/`（7 个首版 agent 定义）+ `skills/`（项目级 skills 布局）。完整导入/配置说明见配置包根的 `README.md`；本文件聚焦**必须诚实告知用户的安全与独占边界**（对应 PRD §10.1、测试计划 TC-7.7）。
+本目录是马冬梅计划（dm-seek）的 Claude Code 成品 team 配置：`agents/`（7 个首版 agent 定义）+ `skills/`（项目级 skills 布局）。完整导入/配置说明见配置包根的 `README.md`；本文件聚焦**必须诚实告知用户的安全与独占边界**（独占机制规则见 `.claude/rules/runtime-spec.md` §4.2、测试计划 TC-7.7）。
 
 ## 运行形态：agent team（路径 B，teammate）
 
@@ -58,4 +58,4 @@
 
 ---
 
-完整角色表、目录结构、导入与配置步骤见根 `README.md`；设计依据见 `docs/` 下各设计定稿。
+完整角色表、目录结构、导入与配置步骤见根 `README.md`；运行时规则与设计定稿见 `.claude/rules/` 下各文档（`runtime-spec.md` 运行时规则 + `design-*.md` 设计定稿）。

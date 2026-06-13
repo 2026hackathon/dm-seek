@@ -20,10 +20,12 @@
 
 ## 目录结构
 
+> **拷贝规则**：运行时只依赖 `.claude/` + `.mcp.json`——用户导入时拷这两项即可。`docs/` 仅存说明性文档（PRD、验证报告、场景说明），不参与运行时。
+
 ```
 dm-seek/
-├─ .claude/
-│  ├─ agents/            7 个首版 agent 定义（本骨架已建）
+├─ .claude/                运行时配置（用户只需拷此目录 + .mcp.json）
+│  ├─ agents/              7 个 agent 定义
 │  │   ├─ dongmei-ma.md
 │  │   ├─ kb-keeper.md
 │  │   ├─ code-analyst.md
@@ -31,19 +33,31 @@ dm-seek/
 │  │   ├─ jira-tracer.md
 │  │   ├─ synthesizer.md
 │  │   └─ evidence-verifier.md
-│  └─ skills/            项目级 skills（路径 B：teammate 从此加载，非 frontmatter）
-│      └─ README.md      skills 布局与计划（具体 skill 由实现任务填充）
-├─ .mcp.json             共享 MCP 配置（GitHub 多仓 + Jira，凭据全 ${VAR} 占位）
-├─ docs/                 PRD + 设计定稿 + 模板
-│   ├─ 马冬梅计划-PRD.md
-│   ├─ design-agent-io-schema.md          agent 间 I/O 契约 + 编排返工循环
-│   ├─ design-core-ng-recognition.md      core-ng 识别规则（实地核验定稿）
-│   ├─ design-source-switching-routing.md 双源切换 + 多仓路由 + 过时判定
-│   ├─ design-synthesis-and-verification.md 综合 + 校验方法论
-│   ├─ design-mcp-config-shape.md         MCP 配置形态 + 独占机制（路径 B）
-│   ├─ design-jira-mcp-toolmap.md         Jira MCP 工具/端点对照
-│   ├─ design-kb-init-and-integration.md  KB 初始化 + 集成形态
-│   └─ templates/                         配置占位模板
+│  ├─ skills/              项目级 skills（路径 B：teammate 从此加载，非 frontmatter）
+│  │   ├─ coreng-recognition/   core-ng 识别规则（单一权威载体）
+│  │   ├─ kb-init/              KB 初始化流程
+│  │   ├─ setup-guide/          引导/配置 skill
+│  │   ├─ synthesis-core/       综合分析方法库（单 skill 多 method）
+│  │   └─ README.md
+│  └─ rules/               运行时规则 + 设计定稿（agent/skill 运行时引用）
+│      ├─ runtime-spec.md                  运行时规则（自 PRD 抽出，agent 引用此而非 PRD）
+│      ├─ design-agent-io-schema.md        agent 间 I/O 契约 + 编排返工循环
+│      ├─ design-core-ng-recognition.md    core-ng 识别规则（实地核验定稿）
+│      ├─ design-source-switching-routing.md 双源切换 + 多仓路由 + 过时判定
+│      ├─ design-synthesis-and-verification.md 综合 + 校验方法论
+│      ├─ design-mcp-config-shape.md       MCP 配置形态 + 独占机制（路径 B）
+│      ├─ design-jira-mcp-toolmap.md       Jira MCP 工具/端点对照
+│      ├─ design-kb-init-and-integration.md KB 初始化 + 集成形态
+│      ├─ design-issuekey-extraction.md    工单号抽取规格 + 用例
+│      ├─ _research/                       实测研究笔记（obsidian CLI 命令面）
+│      └─ templates/                       配置占位模板
+├─ .mcp.json               共享 MCP 配置（GitHub 多仓 + Jira，凭据全 ${VAR} 占位）
+├─ docs/                   纯说明性文档（不参与运行时）
+│   ├─ 马冬梅计划-PRD.md                   产品需求文档（运行时规则的来源，但 agent 不直接引用）
+│   ├─ 验证-TC-7.6-独占运行时验证步骤.md
+│   ├─ 验证-端到端测试计划.md
+│   └─ 验证-端到端测试报告.md
+├─ DMSeek-场景说明.md
 └─ README.md
 ```
 
@@ -66,4 +80,4 @@ dm-seek/
 
 ## 状态
 
-配置包**骨架**（task #8）已搭建：7 个 agent 定义、共享 MCP 占位、tools 白名单（独占落地）、skills 项目级布局、导入说明。各 agent 的 system prompt 实现细节、skills 内容由后续实现任务（#9–#15）填充。设计依据见 `docs/` 下各设计定稿。
+配置包**骨架**（task #8）已搭建：7 个 agent 定义、共享 MCP 占位、tools 白名单（独占落地）、skills 项目级布局、导入说明。各 agent 的 system prompt 实现细节、skills 内容由后续实现任务（#9–#15）填充。运行时规则见 `.claude/rules/runtime-spec.md`，设计定稿见 `.claude/rules/design-*.md`；产品需求文档（PRD）留 `docs/` 仅作说明。

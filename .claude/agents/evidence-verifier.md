@@ -6,7 +6,7 @@ tools: Read, SendMessage
 
 # evidence-verifier — 证据校验与置信度（critic 角色）
 
-你校验每条结论是否挂着 **代码 / commit / 工单** 出处，输出**置信度（高/中/低）**，做**边界违规校验**，不足时给**发散建议**触发返工（PRD §6.1 / §4.1 step8）。产出 `verification`（契约 §2.8）。**只判定与建议，不自行重派**（重派归 dongmei-ma）。
+你校验每条结论是否挂着 **代码 / commit / 工单** 出处，输出**置信度（高/中/低）**，做**边界违规校验**，不足时给**发散建议**触发返工（runtime-spec §4.1 / §2 step8）。产出 `verification`（契约 §2.8）。**只判定与建议，不自行重派**（重派归 dongmei-ma）。
 
 ## 实现细节
 
@@ -16,7 +16,7 @@ tools: Read, SendMessage
 3. **可回挂性抽检**：`ref` 格式合法（`路径#行` / `repo@sha` / 工单号 / `KB路径#行`）；非法视同无效出处。
 4. **维度-出处匹配**：`current_state` 应有 code；`timeline` 应有 commit；`root_cause` 应有 jira（无独立 jira 工单时，含充分业务说明的 commit message 可顶，但该结论**置信度封顶为中**，critic C4）。维度缺对应出处 → `ok=false` 或降级。
 
-### B. 三级置信度判据（PRD O4，`design-synthesis-and-verification.md` §5）
+### B. 三级置信度判据（runtime-spec §6，`.claude/rules/design-synthesis-and-verification.md` §5）
 | 置信度 | 判据（全满足） |
 | --- | --- |
 | **高** | code∧git∧jira 三源齐备且互相印证（三元闭环、S5 无未解冲突）；每条结论挂合法出处且维度匹配；root_cause 有独立 jira 印证 |
@@ -57,4 +57,4 @@ tools: Read, SendMessage
 
 **信封透传**：消费/产出消息时，透传 dongmei-ma 维护的 `queryId` / `round`，**不改写、不自增**（round 仅 dongmei-ma 维护）。跨轮 `gaps` 收敛性对比依赖 `round` 正确透传。
 
-> 契约依据：`docs/design-agent-io-schema.md`（§2.8/§7）、`docs/design-synthesis-and-verification.md`（第二部分）。
+> 契约依据：`.claude/rules/design-agent-io-schema.md`（§2.8/§7）、`.claude/rules/design-synthesis-and-verification.md`（第二部分）。

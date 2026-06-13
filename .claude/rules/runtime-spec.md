@@ -1,0 +1,128 @@
+# dm-seek 运行时规则（runtime-spec）
+
+> 本文是 dm-seek（马冬梅计划）agent team 的**运行时规则单一载体**：agent / skill 在运行时引用本文对应小节，而**不直接引用产品需求文档**（PRD）。内容自 `docs/马冬梅计划-PRD.md` 固化抽出，PRD 仅作产品说明留在 `docs/`，不参与运行时。
+>
+> 引用约定：agent / skill 以 `runtime-spec §N` 形式引用本文小节（如 `§3 九类场景`）。契约与各专题设计定稿见同目录 `design-*.md`。
+
+## §1 硬约束：以代码为唯一事实基准
+
+核心原则 **code as the single source of truth**：
+
+- 一切结论必须能回挂到具体的**代码 / commit / Jira 工单**出处；无出处的判断不冒充结论。
+- 当「代码现实」与「某人的记忆 / 文档描述 / 工单」冲突时，**以代码为锚**给出带时间线的事实，把另一方记为「记录与实现的偏差」，不和稀泥、不臆造。
+
+## §2 核心溯源流程与链路步骤
+
+用户一句自然语言疑问 → team 自动完成全链路 → 交付带置信度的报告。链路步骤（协调者 dongmei-ma 经共享任务列表 + 消息驱动，**非父子委派**）：
+
+1. 用户提出一句自然语言疑问。
+2. **dongmei-ma**（协调者 teammate）解析疑问，拆解子任务、派发到共享任务列表并以消息驱动协作。
+3. **kb-keeper** 查询知识库（KB），给线索（候选模块 / 路径 / 核心类 + 出处引用）。
+4. **code-analyst** 据 KB 线索**定位具体代码并解读**（core-ng）：本地有仓库直读；无本地仓库经 repo-tracer 取代码；KB 未命中回源码兜底。
+5. **repo-tracer** 给**提交时间线**，并从 commit subject **抽取 Jira 工单号**。
+6. **jira-tracer** 经 Jira MCP 取对应工单的**业务原因**与因果脉络。
+7. **synthesizer** 综合 code + git + jira 三源，产出**结论**。
+8. **evidence-verifier** 校验证据充分性并给**置信度（高 / 中 / 低）**：充分 → dongmei-ma 交付 + kb-keeper 沉淀回 KB；不足 → dongmei-ma 发散重派、扩大搜索后重新综合（回第 4~7 步）。
+
+### 交付输出（final_report）
+
+当前实现状态（代码现实）+ 演变时间线（含工单号）+ 根因解释（Jira 业务原因；降级时为「证据不足」声明）+ 置信度（高 / 中 / 低）+（降级时）缺口标注。结论自动沉淀至 KB `queries/`，同类问题下次秒答。
+
+## §3 九类应用场景
+
+供 dongmei-ma 分类 `intent`/`scenario`、synthesizer 选分析方法。清单**可扩展、非封闭集合**。
+
+| # | 场景 | intent slug | 价值 |
+| --- | --- | --- | --- |
+| 1 | 实现与需求文档差异核查 | `change_reason` | 定位「Jira 先变还是代码先变」+ 差异时间节点与责任工单 |
+| 2 | 新需求影响范围评估 | `impact_scope` | 模块依赖与历史变更模式，识别隐性耦合 |
+| 3 | 缺陷责任定位 | `defect_locate` | 追溯最后修改 commit 与工单，带时间线/负责人的证据链 |
+| 4 | 新成员知识加速 | `onboarding` | 三源重建模块设计决策历程 |
+| 5 | 技术债务定性 | `tech_debt` | 区分「有业务原因的历史决策」与「未清理临时方案」 |
+| 6 | 回归缺陷溯源 | `regression_trace` | 定位逻辑最近被触碰 commit 与工单，主动修改 vs 隐藏缺陷 |
+| 7 | 功能蒸发追踪 | `feature_evaporation` | 还原功能被删除的 commit、工单与删除前最后修改 |
+| 8 | 跨团队接口争议仲裁 | `interface_dispute` | 并排「约定变更记录 vs 代码实现记录」 |
+| 9 | 设计与实现对齐审查（含 Figma） | （二期） | 并排「代码改了什么」与「设计意图」，**二期能力** |
+
+## §4 角色职责与独占机制（双层边界 / 三道防线）
+
+### §4.1 角色职责清单（首版 7 agent，平级 teammate）
+
+| id | 职责 | 允许的源类 MCP（L1 白名单） |
+| --- | --- | --- |
+| `dongmei-ma` | 协调者 teammate（类似 tech-lead）：用户接口、解析疑问、拆解派发任务、消息驱动校验返工循环、默认产出中文报告交付；非他人之父、不委派独占下游 | **无**（不直连任何信息源） |
+| `kb-keeper` | 边界唯一 Obsidian KB 读写口：给线索 + 结论沉淀回写；不读源码。集成 = obsidian CLI（search/read/create/append）+ Knowlery `/ask` `/cook` | **无 `mcp__`**（KB 经 obsidian CLI / Knowlery，非 mcp） |
+| `code-analyst` | 据 KB 线索定位并解读 core-ng 代码；KB 未命中源码兜底；KB 初始化时遍历入口/调用链；定位映射到具体 repo+模块 | **无**（本地直读；远端取码经 repo-tracer） |
+| `repo-tracer` | Git/GitHub 网关，**边界独占全部 GitHub MCP 实例**；本地读 git 历史，远端取码+提交历史；管理 N 个按仓划分的 GitHub MCP 实例；始终从 commit subject 抽工单号 | `mcp__github-*`（全部 GitHub MCP 实例）+ 本地 git |
+| `jira-tracer` | 经 Jira MCP 取工单业务原因与多工单因果脉络 | `mcp__jira__jira_get`（**只读**） |
+| `synthesizer` | 综合 code+git+jira → 结论（9 类场景）；分析方法沉淀为可复用 skill | **无**（仅消费上游三源产物） |
+| `evidence-verifier` | 校验每条结论是否挂出处 + 输出置信度 + 边界违规校验 + 不足触发发散返工 | **无**（仅消费上游全部产物） |
+
+> `design-tracer`（Figma 设计追溯）为二期。
+
+### §4.2 独占 = 三道防线（用户裁决：路径 B；属边界约束、非物理隔离）
+
+teammate 形态下 MCP 实例写在共享 `.mcp.json`、**会话层面对全 team 可见**；「独占」靠以下三道防线叠加：
+
+1. **L1 技术层（`tools` 白名单）**：各 agent frontmatter `tools` 白名单只含本域工具——仅 repo-tracer 含 `mcp__github-*`；仅 jira-tracer 含 `mcp__jira__jira_get`（只读）；其余 agent 不含任何源类 `mcp__`。**per-agent 独占在当前 Claude Code 仅 L1 一个原生机制**（`deniedMcpServers` 是组织/会话级一刀切、无 per-agent 粒度、会误伤，故不挂作兜底）。
+2. **声明层（每 agent 固定区块）**：每个 agent 定义含三段固定区块——`## 职责范围` / `## 允许使用的 MCP 服务`（与 L1 白名单一致）/ `## 边界约束`（硬性：禁调领域外 `mcp__`，跨域需求经任务列表 / 消息向 owner agent 请求，绝不直连）。
+3. **校验层（evidence-verifier 运行期兜底）**：校验结论时标记「结论引用了声明范围外工具 / 数据来源」的边界违规。
+
+> **诚实声明（口径，须随交付文档发布）**：本系统「独占」= L1 白名单 + 每 agent 边界声明 + evidence-verifier 校验三者叠加。**L1 白名单对 `mcp__` 工具的屏蔽机制已由真实 CLI 正面佐证**（`--agent` 启动会话工具集 = 精确白名单、`mcp__` 受其管辖）；**live 端到端负向演示（无权 teammate 试调 live MCP 被挡）待部署环境**（TC-7.6）——机制已佐证 ≠ live 已坐实。**不得宣称「物理隔离 / 已完成 live 坐实 / 已生效」**。即便 live 演示意外不成立，声明层 + 校验层仍保证边界清晰、可审计——这正是采用三道防线（而非单押 L1）的理由。
+
+### §4.3 关键归属
+
+- GitHub MCP 独占 repo-tracer；远端模式下 code-analyst 经 repo-tracer 取码（自身禁调 GitHub MCP）。
+- Obsidian KB 读写唯一收口 kb-keeper。
+- dongmei-ma / synthesizer / evidence-verifier 不直连任何源。
+
+## §5 校验返工循环与降级（O5）
+
+- **返工上限：最多 2 轮发散返工**。由 dongmei-ma 依 evidence-verifier 判定驱动（经共享任务列表 + 消息，非父子委派）。
+- 充分（verdict=sufficient，高/中）→ 交付 + 沉淀。不足（insufficient，低/关键结论无出处）→ round<2 且能选出「有新增维度」的有效 hint 则发散重派、round+1；否则降级交付。
+- **降级交付**：照常出报告，但明确声明「证据不足」+ 标注具体缺口（缺哪一源/哪一环），不无限循环、不臆造。
+- **防空转**：每轮发散必须有相对上一轮的新增维度；无新增维度的重派 = 无效返工，不计入 round。
+
+## §6 置信度三级判据（O4）
+
+- **高**：code∧git∧jira 三源齐备且互相印证（三元闭环、无未解冲突）；每条结论挂合法出处且维度匹配；root_cause 有独立 jira 印证。
+- **中**：缺 jira 业务原因，或仅 git 时间线，或 root_cause 仅由充分 commit message 顶替独立 jira（**封顶中**）；结论仍各有出处。
+- **低**：关键结论主要依赖推断/缺直接出处；或仅单源；或三源矛盾无法以代码定论。
+
+附加下调因素（命中则下调或标注）：`shallowWarning`；漏仓（reposCovered ⊊ reposInvolved）；`missingTickets` 非空；大量 `noTicket`；态 C 用本地 / 无法比对远端。
+
+## §7 工单号抽取（O3）
+
+- 默认正则 `^([A-Z]+-\d+)[:\s]`（**冒号或空格**分隔，位于 commit subject 开头；本仓 `DELI-\d+`），**可配置**（支持多项目键）。
+  > 注：PRD O3 原写「冒号分隔」，已据实地 git log 核验更正为「冒号或空白」两种分隔符并存。
+- **容错无号**：无匹配 → `ticketIds=[]`、`noTicket=true`，不报错，commit 仍纳入时间线（置信度降级依据）。
+- **Revert 穿透**：`Revert "<原 subject>"` → 穿透引号对内层再抽号填 `ticketIds`，置 `isRevert=true`（支撑场景 7 功能蒸发）。
+
+## §8 KB 初始化（O7）
+
+- **可选动作、不设上限**：默认初始化全部入口点，支持按需 / 指定范围初始化（某服务 / 某模块）。
+- **入口点**：RESTful 接口定义 + Kafka 消费者。
+- **建库方式**：沿入口类及其调用链路上的类的提交记录 + Jira 做**粗粒度**建库。多仓分别 init，KB 内按 `<repoSlug>/` 命名空间隔离。
+- **知识自增长**：后续查询按需细粒度沉淀（结论写回 `queries/`）。
+
+## §9 双源切换与过时判定（O2）
+
+**过时判定按「被检索到的相关代码」粒度，绝不整仓比较**：
+
+| 本地仓库状态（针对被检索到的相关代码） | 行为 |
+| --- | --- |
+| 无本地仓库 | 全程 GitHub MCP（远端模式），code-analyst 经 repo-tracer 取代码 |
+| 有本地仓库，相关代码段不过时 | 使用本地仓库 |
+| 有本地仓库，相关代码段远端版本更新 | **就该段代码询问用户**是否取最新（非整仓比较；dongmei-ma 唯一询问者，合并询问） |
+
+多仓场景按每个涉及的仓库分别判定；repo-tracer 据 code-analyst 的 repo+模块映射路由到对应本地仓库或 GitHub MCP 实例。
+
+## §10 core-ng 识别约定（双重落地）
+
+- **双重落地**：既依据**官方约定**（core-ng wiki / 源码惯例）作补充印证，又结合**目标仓库的实际标志**——当两者不一致时，**以目标仓库实际代码为准**，不空想惯例。
+- 识别规则**集中一处**维护（载体 = `.claude/skills/coreng-recognition/SKILL.md`），便于扩展到其他框架（只新增规则段 + `coreNgRole` 枚举，不散落各 agent）。
+- 详细识别表、5 项偏离点与样本出处见 `design-core-ng-recognition.md`。
+
+## §11 输出语言（O9）
+
+**默认中文**——dongmei-ma 默认以中文交付报告；英文版按需 / 附随提供（用户显式请求时）。KB 沉淀采「中文 + 英文摘要」。
