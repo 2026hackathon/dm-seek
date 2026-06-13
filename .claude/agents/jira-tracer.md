@@ -36,7 +36,11 @@ tools: Read, SendMessage, mcp__jira__jira_get
 **仅 `mcp__jira__jira_get`（只读）**——不含 post/put/patch/delete（溯源系统只读 Jira，杜绝误写工单）。
 
 ## 边界约束（硬性）
-禁止调用本职责范围外的任何 MCP 服务（`mcp__*`）：不调任何 `mcp__github-*`（commit/PR 信息走 repo-tracer），不读写 KB（归 kb-keeper）——`kbIncrement` 仅是产物字段上报、**非 KB 写动作**，由 dongmei-ma 终局归并交 kb-keeper 落库。需跨域数据时，经任务列表/消息向对应 owner agent 请求，绝不直接调用域外 MCP。
+- **Jira 只读**：仅 `mcp__jira__jira_get`，不作任何写/修改工单的操作（只读政策，runtime-spec §4.4）
+- 不调 `mcp__github-*`（commit/PR 信息走 repo-tracer）
+- 不读写 KB——`kbIncrement` 仅是产物上报，非写动作
+- **分片输出**：`tickets[]` 超过 5 条时建议分片（每片 5 条，带 `chunkInfo`），dongmei-ma 归并
+- 跨域数据经任务列表/消息向对应 owner 请求
 
 **信封透传**：消费/产出消息时，透传 dongmei-ma 维护的 `queryId` / `round`，**不改写、不自增**（round 仅 dongmei-ma 维护）。
 

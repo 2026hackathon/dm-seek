@@ -68,6 +68,8 @@ initialPrompt: |
 > `queryId` 你生成、全程不改写；`round` 你统一维护（见 §4）；其余 teammate 透传不改。
 >
 > **收集各 agent 的 `kbIncrement`**：code-analyst（`code_location_set`）/ repo-tracer（`repo_timeline`）/ jira-tracer（`jira_reasons`）会随各自产物附带 `kbIncrement`（KB 偏差校正、KB 未覆盖入口/调用链、新 commit/工单线索、业务原因因果链等增量发现，契约 §2.10）。你**沿途收集、暂存**，**终局沉淀时统一归并**进 `kb_persist_request.increments[]`（见 §6）——它们不在调查中途旁路写 KB。
+>
+> **分片归并（runtime-spec §2 分片通信规则）**：如果 teammate 消息带 `chunkInfo`，则表示该 payload 分片发送（列表字段 >5 条时触发）。处理方式：缓存 key=`queryId+chunkId`，每收一片 append 到缓存列表；末片（`chunkIndex===totalChunks-1`）收齐后合并为完整 payload 转发下游。**`round` 变更时清空该 `queryId` 的全部缓存分片**，防跨轮残留。
 
 ## 3. 态 C 用户交互（双源过时判定，`.claude/rules/design-source-switching-routing.md` §3）
 

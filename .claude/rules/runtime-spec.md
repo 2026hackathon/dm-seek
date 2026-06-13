@@ -26,9 +26,25 @@
 
 > **多 agent 增量沉淀（知识增量积累）**：除终局由 dongmei-ma 委托 kb-keeper 沉淀最终结论外，code-analyst / repo-tracer / jira-tracer 在本次调查中各自把值得沉淀的**增量发现**（KB 偏差校正、KB 未覆盖的入口/调用链、新 commit/工单线索、业务原因因果链等）作为产物字段 `kbIncrement` 上报；dongmei-ma **终局统一归并**进 `kb_persist_request.increments[]`，由 kb-keeper `append` 写入 `modules/`/`entrypoints/` 细粒度增量（与 `queries/` 权威结论区分）。三 agent **绝不自写 KB**（KB 写独占 kb-keeper），终局归并而非边跑边写——保独占 + 防并发竞态 + 只沉淀经校验内容。契约 §2.10 / §2.9.1。
 
-### 交付输出（final_report）
+### 交付输出（双层报告）
 
-当前实现状态（代码现实）+ 演变时间线（含工单号）+ 根因解释（Jira 业务原因；降级时为「证据不足」声明）+ 置信度（高 / 中 / 低）+（降级时）缺口标注。结论自动沉淀至 KB `queries/`，同类问题下次秒答；多 agent 增量发现随终局沉淀 append 至 `modules/`/`entrypoints/`。
+1. **高层结论（`executiveSummary`）**：面向非技术人员（产品经理/测试）的自然语言结论摘要——用业务语言描述发生了什么、为什么、影响是什么，含必要的证据引用和技术实现细节但不过深。帮助读者快速理解核心结论，再决定是否查阅完整推导。
+2. **完整推导（`final_report`）**：当前实现状态（代码现实）+ 演变时间线（含工单号）+ 根因解释（Jira 业务原因；降级时为「证据不足」声明）+ 置信度（高 / 中 / 低）+（降级时）缺口标注。每条结论挂出处（code/commit/jira）。
+
+结论自动沉淀至 KB `queries/`，同类问题下次秒答；多 agent 增量发现随终局沉淀 append 至 `modules/`/`entrypoints/`。
+
+### 分片通信规则
+
+当 agent 产出的列表型字段（`locations[]` / `timeline[]` / `conclusions[]` / `tickets[]`）超过 **5 条**时，产出方**建议**按 5 条/片分片发送消息（非强制——agent 自判），避免单次载荷过大挤占上下文窗口：
+
+- **信封**：分片消息在信封层携带 `chunkInfo`（`chunkId` / `chunkIndex` / `totalChunks`），非 payload 内。契约 §1.1 定义完整结构。
+- **每片载荷**：独立、自包含。列表字段只含本片条目；非列表共有字段（如 `sourceMode`/`reposInvolved`/`sourcesPresent`/`regexUsed`）在**首片**携带，后续片可省略。
+- **末片**：`chunkIndex = totalChunks - 1`，接收方据此判定已收齐。
+- **归并职责**：**dongmei-ma 是唯一分片归并点**。缓存 key = `queryId + chunkId`（内存暂存），每收一片将列表字段 append 到缓存；末片到齐后合并各片列表字段为完整 payload，下游 agent（synthesizer / evidence-verifier）见到的是合并后的完整 payload。
+- **缓存清理**：`round` 变更时，清空该 `queryId` 的**全部缓存分片**（所有 chunkId），防跨轮残留。
+- **不可分片字段**：synthesizer 产出的 `executiveSummary` 不分片——摘要必须完整且一次送达。
+- **下游透明**：dongmei-ma 合并后转发的 payload **不带 `chunkInfo`**——下游 agent 无需感知分片。
+- **兼容性**：<5 条时不带 `chunkInfo`，兼容无分片感知的下游 agent。
 
 ## §3 九类应用场景
 
@@ -77,6 +93,19 @@ teammate 形态下 MCP 实例写在共享 `.mcp.json`、**会话层面对全 tea
 - **GitHub MCP（远端）独占 repo-tracer**；远端模式下 code-analyst 经 repo-tracer 取码与取远端历史（自身禁调 GitHub MCP）。**本地 git 历史读取权 code-analyst/repo-tracer 共享**（态B 经 Bash 直读本地仓）：code-analyst 取到的本地 git 片段经 `code_location_set.localGitTimeline` 附给 repo-tracer，repo-tracer 信任采用、统一收口产出 `repo_timeline`（抽工单号仍归 repo-tracer）。独占只针对远端 GitHub MCP。
 - Obsidian KB 读写唯一收口 kb-keeper。
 - dongmei-ma / synthesizer / evidence-verifier 不直连任何源。
+
+### §4.4 只读政策
+
+**所有对代码、GitHub 仓库、Jira 的操作都是只读的。** 除以下两项外，禁止任何写操作：
+
+1. **`git fetch`**：拉取远端更新本地仓库（唯一允许的 git 写操作），用于过时判定（§9 态C）。
+2. **KB 写操作**：归 kb-keeper，不受此限（KB 自身定位就是知识沉淀存储）。
+
+具体约束：
+- **代码文件**：所有 agent 对代码文件只读（Read/Grep/Glob），不修改、不创建、不删除任何代码文件。
+- **Git 仓库**：仅允许只读操作（`log`/`diff`/`show`/`cat-file`/`fetch`/`ls-remote`），**严禁** `push`/`commit`/`reset`/`checkout`/`tag`/`rebase`/`stash`/`rm` 等任何改变仓库状态的操作。`fetch` 是唯一例外，通过 `--no-auto-gc`/`--no-tags` 等参数最小化副作用。
+- **Jira**：仅允许 `mcp__jira__jira_get`（只读），杜绝任何写/修改工单的操作。
+- **GitHub MCP**：远端 GitHub MCP 调用仅用于取码 + 取提交历史（只读），禁止通过 MCP 创建/修改 PR、issue、comment 等。
 
 ## §5 校验返工循环与降级（O5）
 

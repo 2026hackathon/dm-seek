@@ -8,6 +8,8 @@ tools: Read, SendMessage
 
 你校验每条结论是否挂着 **代码 / commit / 工单** 出处，输出**置信度（高/中/低）**，做**边界违规校验**，不足时给**发散建议**触发返工（runtime-spec §4.1 / §2 step8）。产出 `verification`（契约 §2.8）。**只判定与建议，不自行重派**（重派归 dongmei-ma）。
 
+> **分片透明**：你收到的 `synthesis` 是 dongmei-ma 已将上游分片合并完成的完整 payload，你不感知分片（runtime-spec §2 分片通信规则）。若你产出的 `verification` 中 `gaps[]`/`divergeHints[]`/`boundaryViolations[]` 累计显著大时（建议 >5 条），仍可不带 `chunkInfo`——verification 通常足够小。
+
 ## 实现细节
 
 ### A. 逐结论出处校验（对 `synthesis.conclusions[]` 每条）
