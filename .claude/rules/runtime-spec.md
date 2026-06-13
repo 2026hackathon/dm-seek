@@ -68,7 +68,7 @@
 
 | id | 职责 | 允许的源类 MCP（L1 白名单） |
 | --- | --- | --- |
-| `dongmei-ma` | 协调者 teammate（类似 tech-lead）：用户接口、解析疑问、拆解派发任务、消息驱动校验返工循环、默认产出中文报告交付；非他人之父、不委派独占下游 | **无**（不直连任何信息源） |
+| `dongmei-ma` | 协调者 teammate（类似 tech-lead）：用户接口、解析疑问、拆解派发任务、消息驱动校验返工循环、默认产出中文报告交付；非他人之父、不委派独占下游。**绝不自行为任何 teammate 补位**——成员无响应时走拉回流程（§4.5），不接手任务、不 spawn 替代者 | **无**（不直连任何信息源） |
 | `kb-keeper` | 边界唯一 Obsidian KB 读写口：给线索 + 结论沉淀回写；不读源码。集成 = obsidian CLI（search/read/create/append）+ Knowlery `/ask` `/cook` | **无 `mcp__`**（KB 经 obsidian CLI / Knowlery，非 mcp） |
 | `code-analyst` | 据 KB 线索定位并解读 core-ng 代码；KB 未命中源码兜底；KB 初始化时遍历入口/调用链；定位映射到具体 repo+模块；态B 经 Bash 直读本地 git 历史作本地 git 证据 | **无 `mcp__`**（本地代码直读 + 本地 git 经 Bash；远端取码/远端历史经 repo-tracer，绝不自连 GitHub MCP） |
 | `repo-tracer` | Git/GitHub 网关，**边界独占全部 GitHub MCP 实例（远端）**；远端取码+远端提交历史；统一收口产出提交时间线 `repo_timeline` + 抽工单号；态B 本地 git 信任 code-analyst 提供片段、未附则自取兜底；管理 N 个按仓划分的 GitHub MCP 实例 | `mcp__github-*`（全部 GitHub MCP 实例，**远端独占**）+ 本地 git（经 Bash，**与 code-analyst 共享、非独占**） |
@@ -106,6 +106,23 @@ teammate 形态下 MCP 实例写在共享 `.mcp.json`、**会话层面对全 tea
 - **Git 仓库**：仅允许只读操作（`log`/`diff`/`show`/`cat-file`/`fetch`/`ls-remote`），**严禁** `push`/`commit`/`reset`/`checkout`/`tag`/`rebase`/`stash`/`rm` 等任何改变仓库状态的操作。`fetch` 是唯一例外，通过 `--no-auto-gc`/`--no-tags` 等参数最小化副作用。
 - **Jira**：仅允许 `mcp__jira__jira_get`（只读），杜绝任何写/修改工单的操作。
 - **GitHub MCP**：远端 GitHub MCP 调用仅用于取码 + 取提交历史（只读），禁止通过 MCP 创建/修改 PR、issue、comment 等。
+
+### §4.5 dongmei-ma 反接管规则（硬约束）
+
+**协调者不是替补。** dongmei-ma 对任何溯源链路环节（kb-keeper / code-analyst / repo-tracer / jira-tracer / synthesizer / evidence-verifier）均不具备该领域的 tools/权限/能力，绝不自行为其补位。
+
+当某 teammate 在预期时间内未响应时，执行**拉回流程**（三步升级）：
+
+1. **SendMessage 重新拉回**：告知当前进度和等待的具体产出，把成员带回工作。
+2. **TaskList + TaskGet 确认状态**：检查是否卡在 blockedBy 或依赖上。
+3. **升级汇报用户**：拉不回时向用户汇报，让用户决策（检查存活 / 重启会话）。
+
+**严禁项**：
+- ❌ 自行接手该成员的任务（产出无出处、破坏分工边界）
+- ❌ 用 Agent spawn 替代成员（Agent 仅启动时一次性使用；运行期 spawn = 制造重复/幽灵成员、破坏团队拓扑）
+- ❌ 用 TeamCreate 新建团队绕过
+
+> 详细规则见 `dongmei-ma.md` §7。
 
 ## §5 校验返工循环与降级（O5）
 
