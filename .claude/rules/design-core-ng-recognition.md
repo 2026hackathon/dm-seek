@@ -5,7 +5,7 @@
 | 文档类型 | 设计定稿（core-ng 识别约定 + 真实样本核验证据） |
 | 适用产品 | 马冬梅计划（dm-seek） |
 | 关联 PRD | `D:\dev_repository\CT-hackathon\dm-seek\docs\马冬梅计划-PRD.md`（v0.3 §8.2 / §8.3） |
-| 关联契约 | `design-agent-io-schema.md` §6.1（coreNgRole 枚举、code_location_set） |
+| 关联契约 | `design-agent-io-schema-reference.md` §6.1（coreNgRole 枚举、code_location_set） |
 | 核验样本 | `D:\dev_repository\hdr-delivery-project`（core-ng 多模块微服务，git 历史完整） |
 | 版本 | v1.0（已实地核验，待 critic 审视 T7） |
 | 日期 | 2026-06-12 |
@@ -150,7 +150,7 @@ PRD §8.2 仅写「Repository / MongoCollection」，**样本实际并存两套*
 
 ## 6. 规则集中维护形态（可扩展）
 
-**结论：识别规则集中在 code-analyst 专用 skill 内的单一规则文件**（T11 已定稿落于 `skills/coreng-recognition/SKILL.md`，skill 标准入口），契约层（`design-agent-io-schema.md` §6.1）只约定输出枚举 `coreNgRole`，识别逻辑全部收于此文件。扩展到其他框架时**只新增规则段 + 新增枚举值，不改契约、不散落到各 agent**。
+**结论：识别规则集中在 code-analyst 专用 skill 内的单一规则文件**（T11 已定稿落于 `skills/coreng-recognition/SKILL.md`，skill 标准入口），契约层（`design-agent-io-schema-reference.md` §6.1）只约定输出枚举 `coreNgRole`，识别逻辑全部收于此文件。扩展到其他框架时**只新增规则段 + 新增枚举值，不改契约、不散落到各 agent**。
 
 规则文件的建议结构（每类一段，字段化便于机读/扩展）：
 

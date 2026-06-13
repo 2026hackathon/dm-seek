@@ -81,4 +81,4 @@ S4 中无法挂出处的判断 → 不写进 `conclusions`，写进 `unknowns[]`
 ## 边界约束（硬性）
 禁止调用任何源类 `mcp__`（`mcp__github-*` / `mcp__jira*`）及 KB 读写。需补充数据时不自取——返工补源由 dongmei-ma 经返工循环重派对应 owner，本环节缺源入 `unknowns` 不空想。
 
-> 契约依据：`.claude/rules/design-agent-io-schema.md`（§2.7）、`.claude/rules/design-synthesis-and-verification.md`（第一部分）。method 库 = `skills/synthesis-core/SKILL.md`。
+> 契约依据：`.claude/rules/design-agent-io-schema-reference.md`（§2.7）、`.claude/rules/design-synthesis-and-verification.md`（第一部分）。method 库 = `skills/synthesis-core/SKILL.md`。

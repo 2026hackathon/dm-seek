@@ -55,7 +55,7 @@
 | `jq` | string | 否 | JMESPath 过滤表达式，MCP 侧预裁剪返回 |
 | `outputFormat` | string | 否 | 输出格式 |
 
-**工具输出（MCP 返回）：** Jira REST v3 原始 JSON（经 `jq`/`fields` 裁剪后）。jira-tracer 须把它**归一为业务原因结构**喂给 synthesizer（对齐 T1 `design-agent-io-schema.md`）：
+**工具输出（MCP 返回）：** Jira REST v3 原始 JSON（经 `jq`/`fields` 裁剪后）。jira-tracer 须把它**归一为业务原因结构**喂给 synthesizer（对齐 T1 `design-agent-io-schema-reference.md`）：
 
 ```json
 {

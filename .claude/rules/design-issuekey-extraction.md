@@ -46,7 +46,7 @@
 
 ## 3. 输出契约（字段名以 T1 §2.4 为权威，本文对齐）
 
-> **字段名口径（critic B4/B1 收口，T1 字段名已锁定 2026-06-12）**：以 `design-agent-io-schema.md`（T1）§2.4 为权威，三字段锁定为：`ticketIds`(array<string>, **必填**) / `noTicket`(boolean, 可选) / `isRevert`(boolean, 可选)。本文原用的 `issueKeys`/`hasIssueKey`/`revert` 已统一为 T1 名，类型/必填性与 T1 一致。
+> **字段名口径（critic B4/B1 收口，T1 字段名已锁定 2026-06-12）**：以 `design-agent-io-schema-reference.md`（T1）§2.4 为权威，三字段锁定为：`ticketIds`(array<string>, **必填**) / `noTicket`(boolean, 可选) / `isRevert`(boolean, 可选)。本文原用的 `issueKeys`/`hasIssueKey`/`revert` 已统一为 T1 名，类型/必填性与 T1 一致。
 
 每个 commit 抽号产出结构：
 

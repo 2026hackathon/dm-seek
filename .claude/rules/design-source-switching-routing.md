@@ -5,7 +5,7 @@
 | 文档类型 | 设计定稿（代码来源双源切换 / 多仓路由 / 按代码段粒度过时判定） |
 | 适用产品 | 马冬梅计划（dm-seek） |
 | 关联 PRD | `马冬梅计划-PRD.md` v0.3（§7.4 双源切换、§6.2 跨仓归属、§9 MCP） |
-| 协同契约 | `design-agent-io-schema.md`（§2.3 code_location_set / §2.3.1 code_fetch / §4 双源切换） |
+| 协同契约 | `design-agent-io-schema-reference.md`（§2.3 code_location_set / §2.3.1 code_fetch / §4 双源切换） |
 | 协同契约 | `design-mcp-config-shape.md`（§2.3 仓↔实例↔token 映射表，路由依据） |
 | 核验事实 | `design-core-ng-recognition.md`（多模块布局、入口遍历可行性） |
 | 版本 | v1.0（待 critic 审视 T7） |
@@ -20,7 +20,7 @@
 ## 0. 范围与边界
 
 - **管什么**：一次查询命中的代码，来源走本地还是远端 GitHub MCP；远端版本是否比本地新、何时就此询问用户；一次查询横跨多仓时如何把每段代码路由到对的仓库/实例。
-- **不管什么**：MCP 实例命名/token/独占机制（→ `design-mcp-config-shape.md`）；工单号抽取（→ `design-core-ng-recognition.md` §5 / repo-tracer #12）；返工循环（→ `design-agent-io-schema.md` §7）。
+- **不管什么**：MCP 实例命名/token/独占机制（→ `design-mcp-config-shape.md`）；工单号抽取（→ `design-core-ng-recognition.md` §5 / repo-tracer #12）；返工循环（→ `design-agent-io-schema-reference.md` §7）。
 - **铁律（PRD O2）**：过时判定**按被检索到的相关代码段粒度**，**绝不做整仓 diff / 整仓 fetch 比较**。
 
 ---
@@ -72,7 +72,7 @@
 
 ### 2.4 契约字段对齐（扩展 §2.3.1 code_fetch_response）
 
-与 `design-agent-io-schema.md` §4 一致，明确 `code_fetch_response`（repo-tracer → code-analyst）字段：
+与 `design-agent-io-schema-reference.md` §4 一致，明确 `code_fetch_response`（repo-tracer → code-analyst）字段：
 
 ```json
 {

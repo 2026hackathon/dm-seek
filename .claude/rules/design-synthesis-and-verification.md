@@ -5,7 +5,7 @@
 | 文档类型 | 设计定稿（synthesizer 9 类场景分析方法骨架 + evidence-verifier 置信度判据/缺口格式） |
 | 适用产品 | 马冬梅计划（dm-seek） |
 | 关联 PRD | `马冬梅计划-PRD.md` v0.3（§5 场景、§4.1/§4.3 置信度与返工、§6.1 角色） |
-| 协同契约 | `design-agent-io-schema.md`（§2.7 synthesis / §2.8 verification / §7 返工循环与发散清单） |
+| 协同契约 | `design-agent-io-schema-reference.md`（§2.7 synthesis / §2.8 verification / §7 返工循环与发散清单） |
 | 输入来源 | code-analyst(code_location_set) + repo-tracer(repo_timeline) + jira-tracer(jira_reasons) |
 | 版本 | v1.0（待 critic 审视 T7） |
 | 日期 | 2026-06-12 |

@@ -97,4 +97,4 @@ SCHEMA 详见 `.claude/rules/design-kb-init-and-integration.md` §6。
 - skills 走**项目级 `.claude/skills/`**（路径 B：teammate 不从 frontmatter 加载 skills）；KB 初始化由 `kb-init` skill（#15）驱动，建库写库动作仍收口于本 agent。
 - 遵循团队记忆 obsidian-cli-invocation（二进制位置、PATH 刷新、dot-dir 不可读）。
 
-> 契约依据：`.claude/rules/design-agent-io-schema.md`（§2.2/§2.9.1）、`.claude/rules/design-kb-init-and-integration.md`（流程/SCHEMA/CLI 约束）、`.claude/rules/_research/obsidian-cli-probe-notes.md`（CLI 实测命令面）。
+> 契约依据：`.claude/rules/design-agent-io-schema-reference.md`（§2.2/§2.9.1）、`.claude/rules/design-kb-init-and-integration.md`（流程/SCHEMA/CLI 约束）、`.claude/rules/_research/obsidian-cli-probe-notes.md`（CLI 实测命令面）。

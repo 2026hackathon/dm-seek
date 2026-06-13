@@ -162,4 +162,4 @@ ticket:
 | ④ | WebServiceImpl 在 `{service}/web/` | 实为 `app.{domain}.{subdomain}.web` | 以 `implements *WebService` 为主判据 |
 | ⑤ | 未提排除 | `frontend/node_modules`、`build/` 须排除；`utility/` 库非入口 | `exclude_paths` + 入口遍历仅 backend 服务 |
 
-> 权威依据：`.claude/rules/design-core-ng-recognition.md`（含逐条样本出处与 5 项偏离点）、`.claude/rules/design-agent-io-schema.md` §6.1（coreNgRole 枚举）、团队记忆 `hdr-delivery-coreng-markers`。
+> 权威依据：`.claude/rules/design-core-ng-recognition.md`（含逐条样本出处与 5 项偏离点）、`.claude/rules/design-agent-io-schema-reference.md` §6.1（coreNgRole 枚举）、团队记忆 `hdr-delivery-coreng-markers`。

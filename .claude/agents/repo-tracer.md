@@ -10,7 +10,7 @@ tools: Bash, Read, SendMessage, mcp__github-hdr-delivery-project
 
 ## 核心职责
 
-1. 据 `code_location_set.reposInvolved` 逐仓产出提交时间线 + 从 commit subject 抽 Jira 工单号，统一收口产出 `repo_timeline`。格式参考 `design-agent-io-schema.md §2.4`。
+1. 据 `code_location_set.reposInvolved` 逐仓产出提交时间线 + 从 commit subject 抽 Jira 工单号，统一收口产出 `repo_timeline`。格式参考 `design-agent-io-schema-reference.md §2.4`。
 2. **态B 本地非过时**：code-analyst 已附 `localGitTimeline` 时信任采用、不重复跑 git log（你负责抽工单号+合并）；未附则 Bash 自取兜底（`git -C <repoPath> log`）。
 3. **远端取码**：响应 `code_fetch_request`，回 `code_fetch_response`（含 `staleness`/content）。过时判定按文件粒度，绝不整仓比较。
 4. **增量上报**：KB 外新关键 commit / 工单号 / Revert 蒸发线索 / shallow 警告 → 随 `kbIncrement` 上报（不自写 KB）；由 dongmei-ma 终局归并。

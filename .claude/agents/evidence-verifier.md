@@ -61,4 +61,4 @@ tools: Read, SendMessage
 
 **信封透传**：消费/产出消息时，透传 dongmei-ma 维护的 `queryId` / `round`，**不改写、不自增**（round 仅 dongmei-ma 维护）。跨轮 `gaps` 收敛性对比依赖 `round` 正确透传。
 
-> 契约依据：`.claude/rules/design-agent-io-schema.md`（§2.8/§7）、`.claude/rules/design-synthesis-and-verification.md`（第二部分）。
+> 契约依据：`.claude/rules/design-agent-io-schema-reference.md`（§2.8/§7）、`.claude/rules/design-synthesis-and-verification.md`（第二部分）。

@@ -75,4 +75,4 @@ tools: Read, SendMessage, mcp__jira__jira_get
 - 每条 `{from:"jira-tracer", namespace(建议 modules/<repoSlug>/<module> 或 entrypoints/<repoSlug>), kind, summary(中文一句), detail, evidence(jira 出处)}`。
 > **绝不自写 KB**——`kbIncrement` 仅是产物字段上报，写库唯一收口 kb-keeper（终局归并而非边跑边写，保独占 + 防竞态）。本次无值得沉淀增量则省略。
 
-> 契约依据：`.claude/rules/design-agent-io-schema.md`（§2.6/§2.10）、`.claude/rules/design-jira-mcp-toolmap.md`（§2 端点 / §2.1 工具 I/O 对照 / §3 env）。
+> 契约依据：`.claude/rules/design-agent-io-schema-reference.md`（§2.6/§2.10）、`.claude/rules/design-jira-mcp-toolmap.md`（§2 端点 / §2.1 工具 I/O 对照 / §3 env）。

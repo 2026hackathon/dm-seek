@@ -131,4 +131,4 @@ round = 0 起算
 > - **不得宣称「一键自动启动已坐实/已生效」**，直到 TC-7.7 在真实环境通过。
 > - 三道防线 / 独占口径不受影响：dongmei-ma 仍不持任何源类 MCP、不直连源、不绕链路；`TeamCreate`/`Agent` 非源类工具，独占边界（远端 GitHub MCP 独占 repo-tracer、KB 读写独占 kb-keeper、本地 git 共享）一律不变。
 
-> 契约依据：`.claude/rules/design-agent-io-schema.md`（§2.1/§2.9/§7）、`.claude/rules/design-source-switching-routing.md`（§3）、`.claude/rules/design-synthesis-and-verification.md`。
+> 契约依据：`.claude/rules/design-agent-io-schema-reference.md`（§2.1/§2.9/§7）、`.claude/rules/design-source-switching-routing.md`（§3）、`.claude/rules/design-synthesis-and-verification.md`。
