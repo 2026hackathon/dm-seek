@@ -1,31 +1,18 @@
-# 马冬梅计划 — 双源切换 + 多仓路由 + 过时判定定稿
+# 双源切换 + 多仓路由 + 过时判定
 
-| 项目 | 内容 |
-| --- | --- |
-| 文档类型 | 设计定稿（代码来源双源切换 / 多仓路由 / 按代码段粒度过时判定） |
-| 适用产品 | 马冬梅计划（dm-seek） |
-| 关联 PRD | `马冬梅计划-PRD.md` v0.3（§7.4 双源切换、§6.2 跨仓归属、§9 MCP） |
-| 协同契约 | `design-agent-io-schema-reference.md`（§2.3 code_location_set / §2.3.1 code_fetch / §4 双源切换） |
-| 协同契约 | `design-mcp-config-shape.md`（§2.3 仓↔实例↔token 映射表，路由依据） |
-| 核验事实 | `design-core-ng-recognition.md`（多模块布局、入口遍历可行性） |
-| 版本 | v1.0（待 critic 审视 T7） |
-| 日期 | 2026-06-12 |
-| 负责人 | core-dev |
-| 状态 | 待审视 |
-
-> 本文定稿 PRD §7.4：**代码来源双源（本地/远端）切换、按「被检索到的相关代码」粒度的过时判定（非整仓比较）、多仓路由协调**。供 repo-tracer（#12）、code-analyst（#11）实现依赖。MCP 实例配置形态见 `design-mcp-config-shape.md`，本文不重复，只定义**路由与判定的流程语义**。
+> 代码来源双源（本地/远端）切换、按「被检索到的相关代码」粒度的过时判定（非整仓比较）、多仓路由协调。MCP 实例配置形态见 `design-mcp-config-shape.md`，本文只定义**路由与判定的流程语义**。
 
 ---
 
 ## 0. 范围与边界
 
 - **管什么**：一次查询命中的代码，来源走本地还是远端 GitHub MCP；远端版本是否比本地新、何时就此询问用户；一次查询横跨多仓时如何把每段代码路由到对的仓库/实例。
-- **不管什么**：MCP 实例命名/token/独占机制（→ `design-mcp-config-shape.md`）；工单号抽取（→ `design-core-ng-recognition.md` §5 / repo-tracer #12）；返工循环（→ `design-agent-io-schema-reference.md` §7）。
-- **铁律（PRD O2）**：过时判定**按被检索到的相关代码段粒度**，**绝不做整仓 diff / 整仓 fetch 比较**。
+- **不管什么**：MCP 实例命名/token/独占机制（→ `design-mcp-config-shape.md`）；工单号抽取（→ `design-core-ng-recognition.md` §5）；返工循环（→ `design-agent-io-schema-reference.md` §7）。
+- **铁律**：过时判定**按被检索到的相关代码段粒度**，**绝不做整仓 diff / 整仓 fetch 比较**。
 
 ---
 
-## 1. 三态切换总表（PRD §7.4，逐仓判定）
+## 1. 三态切换总表（逐仓判定）
 
 判定单元是 **(仓库, 相关代码段)** 对，不是整仓。每个被 code-analyst 定位到的 location 独立判定其来源状态。
 
@@ -62,7 +49,7 @@
    - 本地无该仓 → `staleness = no_local`（态 A）。
    - 无远端可比（离线 / 未配置该仓 MCP / API 失败）→ `staleness = fresh` 降级处理（用本地）+ 在 `code_fetch_response.notes` 标注「未能比对远端」，由 verifier 视作置信度风险点（见 §5）。
 
-> **不做整仓比较**：每次只对被检索到的若干文件按 path 查询远端，请求量 = 相关 location 数，与仓库规模无关。这是 PRD O2 的实现要点。
+> **不做整仓比较**：每次只对被检索到的若干文件按 path 查询远端，请求量 = 相关 location 数，与仓库规模无关。
 
 ### 2.3 比对触发时机
 
@@ -110,16 +97,16 @@
 
 ## 3. 用户交互点（态 C 的询问）
 
-态 C 是**唯一**需要打断流程问用户的点（PRD §7.4「就该段询问用户」）。交互归属与契约：
+态 C 是**唯一**需要打断流程问用户的点。交互归属与契约：
 
-- **谁问**：`dongmei-ma`（用户接口层，PRD §6.2 唯一对用户）。code-analyst/repo-tracer 不直接问用户，只把 `staleness=stale` 经产物上报 dongmei-ma。
+- **谁问**：`dongmei-ma`（用户接口层，唯一对用户）。code-analyst/repo-tracer 不直接问用户，只把 `staleness=stale` 经产物上报 dongmei-ma。
 - **问什么**（就该段，逐文件聚合呈现，避免一段一问的打扰）：
   > 检索到的相关代码 `OrderTimeoutPolicy.java`（仓库 hdr-delivery-project）本地版本落后远端 1 次提交（远端最新 `DELI-4700`，2026-05-30）。是否取远端最新版本用于本次分析？[取最新 / 用本地]
 - **多段聚合**：一次查询若多个 location 命中 `stale`，dongmei-ma **合并为一次询问**（列出涉及的文件 + 各自落后情况），用户可一次性选「全部取最新 / 全部用本地 / 逐项选择」，减少交互轮次。
 - **用户选择的后果**：
   - 取最新 → code-analyst 据 repo-tracer 回的远端 content 重做该段解读；该 location `sourceMode` 标 `remote`，evidence 注明远端 sha。
   - 用本地 → 用本地内容；报告与 verifier 标注「该段使用本地版本，远端有更新（remoteSha）未采纳」，作为置信度提示而非阻断。
-- **非交互/批处理模式**（无人值守，如 KB 初始化或 CI）：提供默认策略开关 `staleDefault ∈ {prefer_local, prefer_remote, ask}`，默认 `ask`；批处理设 `prefer_remote` 或 `prefer_local` 时跳过询问并在结果标注所用策略。此开关供 #9 dongmei-ma / #15 引导 skill 落地。
+- **非交互/批处理模式**（无人值守，如 KB 初始化或 CI）：提供默认策略开关 `staleDefault ∈ {prefer_local, prefer_remote, ask}`，默认 `ask`；批处理设 `prefer_remote` 或 `prefer_local` 时跳过询问并在结果标注所用策略。此开关供 dongmei-ma / 引导 skill 落地。
 
 ---
 
@@ -151,7 +138,7 @@ repo_timeline.reposCovered  应 == reposInvolved（缺仓=漏仓风险，verifie
 - **code-analyst 的 `locations[].repo` 为权威**：以实际代码定位坐实该段属于哪个仓（按 §1 core-ng 模块布局 + 本地/远端实际命中），汇总成 `reposInvolved`。
 - **repo-tracer 据 `reposInvolved` 路由**，逐仓查 §2.3 映射表决定走本地还是哪个 MCP 实例。
 
-### 4.3 跨服务隐性调用的漏仓兜底（PRD §11.4 风险）
+### 4.3 跨服务隐性调用的漏仓兜底
 
 一次查询可能因跨服务调用隐性涉及未被首轮定位的仓库（如 A 服务调 B 服务的 WebService client）。处置：
 
@@ -200,19 +187,3 @@ repo_timeline.reposCovered  应 == reposInvolved（缺仓=漏仓风险，verifie
 ```
 
 ---
-
-## 7. 对下游任务的契约要点
-
-- **#11 code-analyst**：每个 location 标 `sourceMode` 与 `needRemoteFetch`；以代码实际定位权威填 `repo` 与 `reposInvolved`；识别 `api().client(...)` 等跨服务调用补仓；态 A 走远端、态 B 直读（代码内容 + **本地 git 历史经 `Bash`，随 `localGitTimeline` 附给 repo-tracer**）、态 C 上报待 dongmei-ma 决策。**本地 git 仅限本地仓直读，远端取码/远端历史仍经 repo-tracer，绝不自连 GitHub MCP。**
-- **#12 repo-tracer**：实现 §2.2 按文件 staleness 比对（不整仓比较）；按 `design-mcp-config-shape.md` §2.3 映射表路由本地/实例；回 `reposCovered`、标 `unconfigured`；`code_fetch_response` 按 §2.4 结构。**态B 信任 code-analyst 提供的 `localGitTimeline`、不重复跑 git log；未附则经 `Bash` 自取兜底；无论来源，`repo_timeline` 由 repo-tracer 统一收口产出（抽工单号、多仓合并）。过时判定的本地侧 sha 比对始终由 repo-tracer 执行。**
-- **#9 dongmei-ma**：态 C 合并询问用户（§3）；`staleDefault` 开关；漏仓/未配置/过时纳入报告缺口与 verifier 输入。
-- **#15 引导 skill**：维护 §2.3 映射表（仓↔本地路径↔实例↔token 变量）；增量配置缺失仓。
-
----
-
-## 8. 开放点（1–3 已由 tech-lead 裁定 2026-06-12；偏实现期实测，设计层记默认值，不阻塞）
-
-1. ~~比对往返次数~~ **已裁定**：默认**两次往返**（先探测 staleness、用户确认再取 content，不未授权先拉远端，符合最小披露）。实现期（T12）按体验权衡可优化为一次，但默认两次。
-2. ~~默认分支来源~~ **已裁定**：远端比对用**远端默认分支**，KB/用户可指定。
-3. ~~MCP path 级 sha 查询能力~~ **已裁定为 T12 早期实测项**（与 `design-mcp-config-shape.md` §8 token 粒度开放点合并测）：**默认按 sha**（§2.2）；若 `api.githubcopilot.com/mcp/` 不支持按 path 精确查 commit/blob sha，**退化为取该文件远端内容做 hash 比对**（仍按文件、不整仓）。两种皆可，实测后定。
-4. **批处理 staleDefault 默认值**（设计层默认，待实现期确认）：无人值守默认 `prefer_local`（可复现、不引入网络不确定性），KB 初始化等场景可显式设 `prefer_remote`。

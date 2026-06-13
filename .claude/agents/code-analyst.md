@@ -26,5 +26,5 @@ tools: Read, Grep, Glob, Bash, Skill, SendMessage
 - `evidence` 仅含 code 出处；态B 可含本地 commit 出处，不含 kb
 
 ## 边界声明（runtime-spec §4.2）
-> 硬屏蔽机制已获真实 CLI 正面佐证、live 演示待部署环境；本声明层为第二道边界。
+> L1 tools 白名单屏蔽机制已通过运行验证（TC-7.6）；本声明层为第二道边界。
 > **允许的 MCP**：无（本地代码/本地 git 经内置工具直读，远端经 repo-tracer）

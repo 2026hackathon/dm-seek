@@ -2,15 +2,9 @@
 
 > **运行时加载的轻量契约**：仅含各 agent 运行时必需的 0 原则、1 信封结构、8 归属总表。全部详细 schema（JSON 示例 + 完整字段表 + 章节 2-7）见同目录 `design-agent-io-schema-reference.md`，agent 需产出特定载荷时按需 Read。
 
-| 项目 | 内容 |
-| --- | --- |
-| 文档类型 | 设计契约（agent 间输入/输出 schema + 编排返工循环） |
-| 版本 | v0.2 |
-| 运行形态 | 路径 B（agent team teammate）：7 agent 平级，dongmei-ma 协调者经任务列表+消息驱动 |
-
 ## 0. 约定与说明
 
-- agent 之间是 teammate 间经任务列表+消息的自然语言协作（路径 B，协调非父子委派）。
+- agent 之间是 teammate 间经任务列表+消息的自然语言协作。
 - **传递形态**：采自然语言为主 + 结构化字段可无歧义提取，不强制贴 JSON 代码块。
 - **核心原则**：代码为唯一事实基准；每条结论必须可回挂到 code/commit/jira 出处。
 

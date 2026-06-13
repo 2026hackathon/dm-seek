@@ -31,5 +31,5 @@ tools: Bash, Read, SendMessage, mcp__github-hdr-delivery-project
 - 信封：`queryId` / `round` 来自 dongmei-ma，透传不改写
 
 ## 边界声明（runtime-spec §4.2）
-> 硬屏蔽机制已获真实 CLI 正面佐证、live 演示待部署环境。独占为策略级（tools 白名单），非物理隔离。
+> L1 tools 白名单屏蔽机制已通过运行验证（TC-7.6）。独占为策略级（tools 白名单），非物理隔离。
 > **允许的 MCP**：`mcp__github-*`（远端独占；各仓独立实例+独立 token）

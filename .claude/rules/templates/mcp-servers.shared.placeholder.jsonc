@@ -1,8 +1,8 @@
-// 占位模板 — 共享 .mcp.json（路径 B：agent team teammate 形态）
-// 用途：task #8 骨架 / task #15 引导 skill 据用户探测结果填充项目根 .mcp.json。
-// 规则见 ../design-mcp-config-shape.md（路径 B 版）。
+// 占位模板 — 共享 .mcp.json（agent team teammate 形态）
+// 用途：引导 skill 据用户探测结果填充项目根 .mcp.json。
+// 规则见 ../design-mcp-config-shape.md。
 //
-// 路径 B 要点：
+// teammate 形态要点：
 //   - 核心 MCP（GitHub 多仓 + Jira）都写在共享 .mcp.json（会话级，全 team 可见）。
 //   - 不走 agent frontmatter 内联——teammate 形态下 frontmatter 的 mcpServers 被忽略。
 //   - 独占靠各 agent 的 tools 白名单（见 ./agent-tools-allowlist.placeholder.md）。

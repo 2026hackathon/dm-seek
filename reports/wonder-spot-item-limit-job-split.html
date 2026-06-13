@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>溯源报告 — Wonder Spot Order 基于 item limit 的 Task→Job 拆分</title>
+<style>
+  :root{
+    --bg:#0f1117; --card:#1a1d28; --card2:#212433; --ink:#e6e9f0; --muted:#9aa3b5;
+    --line:#2c3142; --accent:#5b8cff; --code:#7fdbb6; --warn:#ffb454;
+    --high:#3ddc97; --mid:#ffb454; --low:#ff6b6b;
+    --commit:#c792ea; --jira:#82aaff; --codepill:#7fdbb6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.65;font-size:15px}
+  .wrap{max-width:980px;margin:0 auto;padding:32px 24px 80px}
+  header.head{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:28px}
+  h1{font-size:24px;margin:0 0 6px;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:14px}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12.5px;color:var(--muted)}
+  .chip b{color:var(--ink);font-weight:600}
+  .conf{font-weight:700}
+  .conf.high{color:var(--high)}
+  .badge-high{background:rgba(61,220,151,.13);border:1px solid rgba(61,220,151,.4);color:var(--high);
+    border-radius:999px;padding:4px 14px;font-size:13px;font-weight:700}
+  h2{font-size:18px;margin:36px 0 14px;padding-left:11px;border-left:3px solid var(--accent)}
+  h3{font-size:15px;margin:22px 0 8px;color:#c7cddd}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0}
+  .tldr{background:linear-gradient(135deg,rgba(91,140,255,.12),rgba(61,220,151,.07));
+    border:1px solid rgba(91,140,255,.35)}
+  .tldr p{margin:0;font-size:15.5px}
+  code,.mono{font-family:"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:13px;
+    color:var(--code);background:rgba(127,219,182,.08);padding:1px 6px;border-radius:5px;word-break:break-word}
+  ul{margin:8px 0;padding-left:22px}
+  li{margin:5px 0}
+  .src{display:inline-block;font-size:11px;font-weight:600;border-radius:4px;padding:1px 7px;margin-right:5px;vertical-align:middle}
+  .src.code{background:rgba(127,219,182,.14);color:var(--codepill)}
+  .src.commit{background:rgba(199,146,234,.16);color:var(--commit)}
+  .src.jira{background:rgba(130,170,255,.16);color:var(--jira)}
+  pre{background:#0b0d14;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;
+    font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;color:#cdd6f4;line-height:1.55}
+  pre .kw{color:#c792ea}.pre .num{color:#fab387}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.4px}
+  td .mono{font-size:12.5px}
+  .timeline{list-style:none;padding-left:0;margin:8px 0}
+  .timeline li{position:relative;padding:10px 0 10px 26px;border-left:2px solid var(--line);margin-left:6px}
+  .timeline li::before{content:"";position:absolute;left:-7px;top:15px;width:11px;height:11px;border-radius:50%;
+    background:var(--accent);border:2px solid var(--bg)}
+  .timeline li.primary::before{background:var(--high)}
+  .timeline li.ctx::before{background:var(--muted)}
+  .tl-date{color:var(--muted);font-size:12px;margin-right:8px}
+  .tl-tk{color:var(--jira);font-weight:600}
+  .correction{background:rgba(255,180,84,.08);border:1px solid rgba(255,180,84,.35)}
+  .correction h3{color:var(--warn);margin-top:0}
+  .flow{background:#0b0d14;border:1px solid var(--line);border-radius:10px;padding:16px;margin:12px 0;
+    font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;color:#cdd6f4;overflow-x:auto;white-space:pre}
+  .note{color:var(--muted);font-size:13px}
+  footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+  .ev-index code{display:inline-block;margin:3px 4px 3px 0}
+  .kkey{color:var(--accent);font-weight:600}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="head">
+    <h1>Wonder Spot Order 如何基于 order item limit 把 Task 拆分到多个 Job</h1>
+    <div class="sub">代码溯源报告 · 马冬梅计划（dm-seek）· 仓库 hdr-delivery-project</div>
+    <div class="meta">
+      <span class="chip">queryId <b>q-20260613-001</b></span>
+      <span class="chip">置信度 <span class="badge-high">高</span></span>
+      <span class="chip">返工轮次 <b>0</b></span>
+      <span class="chip">数据源 <b>代码 + Git + Jira（三源闭环互证）</b></span>
+      <span class="chip">日期 <b>2026-06-13</b></span>
+    </div>
+  </header>
+
+  <section class="card tldr">
+    <p><b>一句话结论：</b>每个 job 有一个 item 数量上限 <code>wonderSpotMaxOrderItemCount</code>（默认 <b>10</b>，dispatch-portal 可配）。系统先按「同企业 <code>corporateId</code> + 同配送时间窗」把 task 分组，组内按该上限做装箱——能塞进已有未满 job 的就追加（append），塞不下的按 <code>ceil(组内总item / 上限)</code> 新建若干 job；单个 task 过大时还会被拆开跨 job。</p>
+  </section>
+
+  <h2>① item limit 的数值与配置来源</h2>
+  <div class="card">
+    <ul>
+      <li>字段：<code>HDRParentChildTaskSetting.wonderSpotMaxOrderItemCount</code>（Integer）
+        <span class="src code">code</span><span class="mono">HDRParentChildTaskSetting.java#L15</span></li>
+      <li>默认值 = <b>10</b> <span class="src code">code</span><span class="mono">HDRDeliverySettingBuilder.java#L142</span></li>
+      <li>来源 = HDR 配送设置（DB 持久化），<b>dispatch-portal 可改</b>，变更有审计
+        <span class="src code">code</span><span class="mono">HDRDeliverySettingV2ServiceBuilder.java#L206</span>
+        <span class="src code">code</span><span class="mono">ParentChildTaskSettingHistoryProducer.java#L33-34</span></li>
+      <li>固化时机：job 创建那一刻把该值固化进 <code>JobAmount.corporateItemLimit</code>，之后 append 以固化值为准（注释 "determined by creation moment"）
+        <span class="src code">code</span><span class="mono">JobAmount.java#L28-29</span>
+        <span class="src code">code</span><span class="mono">AppendJobContext.java#L46</span></li>
+    </ul>
+    <p class="note">⚠ 区分两个上限：通用「Max Child Task per Parent」默认 <b>5</b>（按子任务条数）；Wonder Spot 「item limit」默认 <b>10</b>（按订单 item / 菜品项数量）。用户问的拆单走的是后者（item 维度）。</p>
+  </div>
+
+  <h2>② 拆分逻辑的代码位置</h2>
+  <div class="card">
+    <h3>主控：<code>CorporateJobCreationService.createJob</code> <span class="src code">code</span><span class="mono">job/service/creation/CorporateJobCreationService.java#L88-104</span></h3>
+    <div class="flow">L92  按 CorporateTaskGroupKey(corporateId, groupNumber) 分组 (groupingBy)
+L94  tryAppend(...)  ── 先并入已有 job
+       ├─ appendToPreAllocatedJobs (L325, Mongo PreAllocatedJob)
+       └─ appendToTrulyCreationJobs (L265, MySQL)
+L96-98  若 append 后无剩余 task → return（不新建）
+L99-101 有剩余 → buildContext(PRE_CREATE_MULTI_CORPORATE, L165)
+                 → allocateAndCreateWithContext(L163)  ── 新建 job</div>
+    <ul>
+      <li>分组键 <code>CorporateTaskGroupKey(corporateId, groupNumber)</code>（嵌套静态类）
+        <span class="src code">code</span><span class="mono">CorporateJobCreationService.java#L418-439</span></li>
+      <li><code>groupNumber = "{配送时段起}_{止}"</code>（纽约时区 yyyyMMddHHmmss）——同企业 + 同配送时间窗才同组，跨组绝不并入同一 job
+        <span class="src code">code</span><span class="mono">WonderSpotAppendTaskBuilder.java#L62</span></li>
+      <li>准入门槛 <code>item_count &lt; corporate_item_limit</code>：truly-created 侧 SQL
+        <span class="src code">code</span><span class="mono">CorporateJobCreationService.java#L278</span>；pre-allocated 侧
+        <span class="src code">code</span><span class="mono">PreAllocatedJobBaseService.java#L51</span>
+        （叠加 JobStatus / OrderStatus / created_time≥今日EST 过滤）</li>
+      <li>并发乐观锁 <code>jobRepository.partialUpdate(job, "job_status IN (APPENDABLE_JOB_STATUSES)", ...)</code>，冲突回滚
+        <span class="src code">code</span><span class="mono">CorporateJobCreationService.java#L295</span></li>
+    </ul>
+  </div>
+
+  <h2>③ 拆分算法（决定切成几个 job）</h2>
+  <div class="card">
+    <h3>阈值推导 <code>CreateJobUtil.calcCorporateMultiTaskMaxItemCountThreshold</code> <span class="src code">code</span><span class="mono">CreateJobUtil.java#L22-29</span></h3>
+    <div class="flow">jobMaxItemCount   = wonderSpotMaxOrderItemCount          // 默认 10
+totalItemQuantity = Σ taskParam.taskAmount.itemCount    // 组内总 item
+partCount         = total ≤ jobMax ? 1 : total / jobMax (HALF_UP)
+partItemThreshold = max( ceil(total / partCount), jobMax )
+partitionCount    = ceil(总item / jobMaxItemCount)       // 切几个 job (UP)</div>
+    <p class="note">→ 按组批量切分，<b>非</b>逐 item 即时新开。<span class="src code">code</span><span class="mono">CreateJobUtil.java#L38-39</span></p>
+
+    <h3>新建侧装箱 <code>CreateJobContext.partitionTaskParamsForCorporate</code> <span class="src code">code</span><span class="mono">CreateJobContext.java#L209-237</span></h3>
+    <div class="flow">for (i in partitionCount):
+    counter = jobMaxItemCount                  // 每个新 job 的剩余容量
+    while (counter &gt; 0 && tasks 非空):
+        整装头部 task (放得下) → 加入，counter -= 该 task itemCount
+        否则 splitAndReduceTask(按剩余容量拆尾, L228) → 跨 job 续放</div>
+
+    <h3>append 侧装箱 <code>AppendJobContext.calc</code> <span class="src code">code</span><span class="mono">AppendJobContext.java#L61-102</span></h3>
+    <ul>
+      <li>最小堆挑「现有 itemCount 最小（最空）」的已有 job 先填</li>
+      <li><code>minimumJob.itemCount ≥ corporateItemLimit</code> 即停止 append（L69-72）</li>
+      <li>否则 findBestMatchTask + splitAndReduceTask 按 spare 容量拆</li>
+    </ul>
+
+    <h3>多 job 边界条件</h3>
+    <ul>
+      <li>① 跨组绝不并入同一 job（分组键隔离）</li>
+      <li>② 已有 job 达 <code>corporate_item_limit</code> 即不可再 append</li>
+      <li>③ append 装不下的剩余 task → 走新建路径按阈值切</li>
+      <li>④ 企业单（CORPORATE）允许把一个 task 拆开跨多个 job（<code>usingSplit=true</code>，L33）</li>
+    </ul>
+  </div>
+
+  <h2>演变时间线（Git + Jira 锚定）</h2>
+  <div class="card">
+    <ul class="timeline">
+      <li class="primary"><span class="tl-date">2024-03</span><span class="tl-tk">DELI-1893 / DELI-1894</span>（史诗 DELI-1892「Parent-Child Task Structure」）— 确立「一单拆成 1 parent + 多 child task、按 max child tasks per parent 拆」的<b>架构总源</b>；Portal 引入每 parent 子任务上限（默认 5）
+        <span class="src commit">commit</span><span class="mono">@a3fc87f / @0bfa2b5</span></li>
+      <li class="primary"><span class="tl-date">2024-05</span><span class="tl-tk">DELI-2192</span> — Max Child Task Setting 后端泛化
+        <span class="src commit">commit</span><span class="mono">@7668d3c</span></li>
+      <li class="primary"><span class="tl-date">2024-07</span><span class="tl-tk">DELI-2477</span>（史诗 DELI-2476「Item-Based Wonder Spot Delivery」）— 引入 Wonder Spot item-limit 配置项 <code>wonderSpotMaxOrderItemCount</code>（V1）
+        <span class="src commit">commit</span><span class="mono">@80c3e24</span></li>
+      <li class="primary"><span class="tl-date">2024-12</span><span class="tl-tk">DELI-2780</span>（史诗 DELI-2777「2.0 Migration」）— 配置字段迁入 V2 interface
+        <span class="src commit">commit</span><span class="mono">@24a386a</span></li>
+      <li class="primary"><span class="tl-date">2024-12</span><span class="tl-tk">DELI-3103</span>（史诗 DELI-2847「Wonder Spot Delivery Creation」）— 引入<b>消费</b>该配置的阈值算法 <code>calcCorporateMultiTaskMaxItemCountThreshold</code> + 准入 SQL，使 item limit 真正决定拆几个 job
+        <span class="src commit">commit</span><span class="mono">@36e88d5 / @58d0529</span></li>
+      <li class="primary"><span class="tl-date">2025-01</span><span class="tl-tk">DELI-3155</span>（史诗 DELI-3309）— 设新 HDR 默认值「Wonder Spot = 10」
+        <span class="src commit">commit</span><span class="mono">@b5fc58b</span></li>
+      <li class="ctx"><span class="tl-date">2025-03 / 04</span><span class="tl-tk">DELI-3408 / DELI-3472</span> — 创建健壮性（bug 修复 + 乐观锁），与拆单链相关</li>
+      <li class="primary"><span class="tl-date">2026-03</span><span class="tl-tk">DELI-4359</span>（史诗 DELI-4329「Parallel Search 竞速派单」）— job creation flow 重构（<b>非</b>拆单机制起源）
+        <span class="src commit">commit</span><span class="mono">@fb3c209</span></li>
+      <li class="ctx"><span class="tl-date">2026-05</span><span class="tl-tk">DELI-4494</span> — 释放计时 15→30min（<b>非</b>拆单本身，仅相关文件最近改动）
+        <span class="src commit">commit</span><span class="mono">@31625bc</span></li>
+    </ul>
+  </div>
+
+  <h2>根因解释（业务原因，Jira 史诗印证）</h2>
+  <div class="card">
+    <ul>
+      <li><b>为什么有这个架构</b>：<span class="src jira">jira</span>史诗 DELI-1892「Parent-Child Task Structure」——一单拆 parent + 多 child task，按每 parent 最大 child 数拆分。</li>
+      <li><b>为什么设 item 上限</b>：<span class="src jira">jira</span>史诗 DELI-2476「Item-Based Wonder Spot Delivery」——Wonder Spot 配送以菜品项（item）为基准，需为单 job 设可配置的 item 数量上限（DELI-2477）。</li>
+      <li><b>为什么按上限拆 job</b>：<span class="src jira">jira</span>史诗 DELI-2847「Wonder Spot Delivery Creation」——厨房放行时为订单创建配送，拆单阈值算法是其实现环节（DELI-3103）。</li>
+      <li><b>为什么后来重构 flow</b>：<span class="src jira">jira</span>史诗 DELI-4329「Parallel Search 竞速派单」（DELI-4359）。</li>
+    </ul>
+  </div>
+
+  <section class="card correction">
+    <h3>⚑ 本轮关键校正（知识库旧归因被推翻）</h3>
+    <p>知识库（KB）旧记录把「item-limit 配置化」<b>单独归给 DELI-3103</b>。本次以 Git diff 实际触碰 + Jira 业务原因三源互证，坐实其为一条<b>责任链</b>，DELI-3103 实为<b>消费方</b>而非配置化方：</p>
+    <div class="flow">架构源 DELI-1892/1893/1894 (Parent-Child, 默认5)
+   → DELI-2192 (后端泛化)
+   → DELI-2477 (引入 Wonder Spot item-limit 配置, V1)
+   → DELI-2780 (迁 V2 interface)
+   → DELI-3155 (设默认值 10)
+   → DELI-3103 (消费该配置, 阈值算法 + 准入 SQL, 决定拆几个 job)</div>
+    <p class="note">据此，本结论在知识库中的置信度由 <b>中</b> 升级为 <b>高</b>。</p>
+  </section>
+
+  <h2>置信度：<span class="conf high">高</span> 的依据</h2>
+  <div class="card">
+    <ul>
+      <li>三源（代码 + Git + Jira）闭环互证：每个演进环节都有「代码实体 ↔ commit ↔ Jira 史诗」三元对应。</li>
+      <li>每条结论均挂出处；4 条 root_cause 各有<b>独立 Jira 史诗</b>印证（DELI-1892 / 2476 / 2847 / 4329），非 commit message 顶替。</li>
+      <li>单仓覆盖、无漏仓；非 shallow clone（历史完整）；工单 missingTickets 为空；无边界违规。</li>
+      <li>evidence-verifier 终版判定：verdict = sufficient，confidence = 高。</li>
+    </ul>
+  </div>
+
+  <h2>诚实标注</h2>
+  <div class="card">
+    <ul>
+      <li>DELI-2477 / 3103 / 4359 为子任务、工单正文为空，业务原因取自其父史诗（已据实标注层级，未臆造）。</li>
+      <li>需求细节正文在 Confluence（本系统无法读取），属信息边界，不影响以上结论。</li>
+      <li>DELI-3155（2025-01 设新默认值）晚于 DELI-3103（2024-12 消费）：消费逻辑此前已用既有 / per-HDR 配置值运行，3155 是后续的默认值调整——时序如实，非矛盾。</li>
+      <li>item limit 的精确数值与算法以代码为准，Jira 仅提供业务动机。</li>
+    </ul>
+  </div>
+
+  <h2>出处索引（Evidence Index）</h2>
+  <div class="card ev-index">
+    <h3>代码 <span class="src code">code</span></h3>
+    <div>
+      <code>TaskWebService.java#L52-54</code>
+      <code>CorporateJobCreationService.java#L88-104</code>
+      <code>#L278</code><code>#L295</code><code>#L418-439</code>
+      <code>WonderSpotAppendTaskBuilder.java#L62</code>
+      <code>HDRParentChildTaskSetting.java#L15</code>
+      <code>HDRDeliverySettingBuilder.java#L142</code>
+      <code>CreateJobUtil.java#L22-29</code><code>#L38-39</code>
+      <code>CreateJobContext.java#L209-237</code>
+      <code>AppendJobContext.java#L46</code><code>#L61-102</code>
+      <code>PreAllocatedJobBaseService.java#L51</code>
+      <code>JobAmount.java#L28-29</code>
+    </div>
+    <h3>提交 <span class="src commit">commit</span> <span class="note">(hdr-delivery-project)</span></h3>
+    <div>
+      <code>@a3fc87f</code><code>@0bfa2b5</code><code>@7668d3c</code><code>@80c3e24</code>
+      <code>@24a386a</code><code>@b5fc58b</code><code>@36e88d5</code><code>@58d0529</code>
+      <code>@fb3c209</code><code>@31625bc</code>
+    </div>
+    <h3>工单 <span class="src jira">jira</span></h3>
+    <div>
+      <code>DELI-1892</code><code>DELI-1893</code><code>DELI-1894</code><code>DELI-2192</code>
+      <code>DELI-2476</code><code>DELI-2477</code><code>DELI-2777</code><code>DELI-2780</code>
+      <code>DELI-2847</code><code>DELI-3103</code><code>DELI-3155</code><code>DELI-3309</code>
+      <code>DELI-4329</code><code>DELI-4359</code><code>DELI-4494</code>
+    </div>
+  </div>
+
+  <footer>
+    马冬梅计划（dm-seek）· 全链路溯源：kb-keeper → code-analyst → repo-tracer → jira-tracer → synthesizer → evidence-verifier｜
+    以代码为唯一事实基准，每条结论可回挂 代码 / commit / 工单 出处｜
+    结论已沉淀至 KB：<span class="kkey">queries/hdr-delivery-project/wonder-spot-order-lifecycle.md</span>（升级 中→高 + 校正归因）。
+  </footer>
+
+</div>
+</body>
+</html>

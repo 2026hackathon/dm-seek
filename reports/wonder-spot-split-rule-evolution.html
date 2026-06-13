@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wonder Spot 拆单规则需求演进 — dm-seek</title>
+<style>
+  :root {
+    --bg: #f8f9fa; --card-bg: #fff; --text: #1a1a2e; --muted: #6b7280;
+    --border: #e5e7eb; --accent: #4f46e5; --accent-light: #eef2ff;
+    --phase0: #8b5cf6; --phase1: #3b82f6; --phase2: #ef4444; --phase3: #f59e0b; --phase4: #10b981; --phase5: #ec4899; --phase6: #06b6d4;
+    --code-bg: #1e1e2e; --code-text: #c9d1d9;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+
+  header {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4f46e5 100%);
+    color: #fff; border-radius: 12px; padding: 36px; margin-bottom: 24px;
+  }
+  header h1 { font-size: 1.75rem; margin-bottom: 8px; }
+  header .subtitle { opacity: 0.8; font-size: 0.95rem; }
+  header .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  header .meta span {
+    background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 6px; font-size: 0.82rem;
+  }
+
+  .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 28px; margin-bottom: 20px; }
+  .card h2 { font-size: 1.2rem; margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+  .card h3 { font-size: 1rem; margin: 22px 0 10px; }
+
+  /* Timeline */
+  .tl { position: relative; padding-left: 32px; }
+  .tl::before { content: ''; position: absolute; left: 12px; top: 8px; bottom: 8px; width: 2px; background: var(--border); }
+  .tl-item { position: relative; margin-bottom: 28px; padding-left: 28px; }
+  .tl-dot {
+    position: absolute; left: -24px; top: 4px;
+    width: 14px; height: 14px; border-radius: 50%; border: 3px solid #fff;
+    box-shadow: 0 0 0 2px var(--phase0);
+  }
+  .tl-dot.p1 { box-shadow: 0 0 0 2px var(--phase1); }
+  .tl-dot.p2 { box-shadow: 0 0 0 2px var(--phase2); }
+  .tl-dot.p3 { box-shadow: 0 0 0 2px var(--phase3); }
+  .tl-dot.p4 { box-shadow: 0 0 0 2px var(--phase4); }
+  .tl-dot.p5 { box-shadow: 0 0 0 2px var(--phase5); }
+  .tl-dot.p6 { box-shadow: 0 0 0 2px var(--phase6); }
+  .tl-date { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+  .tl-badge {
+    display: inline-block; padding: 2px 10px; border-radius: 4px;
+    font-size: 0.78rem; font-weight: 700; color: #fff; margin-right: 8px;
+  }
+  .tl-badge.p0 { background: var(--phase0); } .tl-badge.p1 { background: var(--phase1); }
+  .tl-badge.p2 { background: var(--phase2); } .tl-badge.p3 { background: var(--phase3); }
+  .tl-badge.p4 { background: var(--phase4); } .tl-badge.p5 { background: var(--phase5); }
+  .tl-badge.p6 { background: var(--phase6); }
+  .tl-title { font-weight: 700; margin: 4px 0; }
+  .tl-desc { font-size: 0.9rem; color: #374151; }
+  .tl-desc ul { padding-left: 18px; margin: 4px 0; }
+  .tl-desc li { margin: 3px 0; }
+
+  /* Code */
+  .code-ref { font-family: "SF Mono", "Cascadia Code", "Consolas", monospace; font-size: 0.81rem; background: var(--code-bg); color: var(--code-text); padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+  pre.code { background: var(--code-bg); color: var(--code-text); padding: 16px; border-radius: 8px; font-family: "SF Mono", "Cascadia Code", "Consolas", monospace; font-size: 0.81rem; overflow-x: auto; line-height: 1.5; margin: 10px 0; }
+  .kw { color: #c084fc; } .str { color: #6ee7b7; } .cmt { color: #6b7280; } .num { color: #fca5a5; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 0.87rem; margin: 10px 0; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: #f9fafb; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; }
+  .yes { color: #10b981; font-weight: 700; } .no { color: #ef4444; }
+  .new { background: #ecfdf5; }
+  .new td:first-child::after { content: " ✨"; font-size: 0.7rem; }
+
+  /* Evidence */
+  .ev-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+  .ev-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.82rem; }
+  .ev-type { padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 700; color: #fff; }
+  .ev-code { background: #10b981; } .ev-commit { background: #f59e0b; } .ev-jira { background: #8b5cf6; }
+
+  /* SVG */
+  svg text { font-family: -apple-system, "Noto Sans SC", sans-serif; }
+
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 24px 0; border-top: 1px solid var(--border); margin-top: 24px; }
+
+  @media print { body { background: #fff; } .card { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>🔀 Wonder Spot 拆单规则需求演进</h1>
+  <p class="subtitle">从 DELI-2847（2024-12）到 DELI-4494（2026-05），跨越 6 个 Phase 的规则演化</p>
+  <div class="meta">
+    <span>📋 queryId: q-20260613-002</span>
+    <span>🎯 intent: change_reason</span>
+    <span>📊 置信度：中</span>
+    <span>📅 报告日期: 2026-06-13</span>
+    <span>🏭 repo: hdr-delivery-project</span>
+  </div>
+</header>
+
+<!-- ====== OVERVIEW ====== -->
+<section class="card">
+  <h2>📌 演进全景</h2>
+  <div style="overflow-x:auto;padding:10px 0;">
+  <svg viewBox="0 0 920 160" style="width:100%;max-width:920px;">
+    <!-- Base line -->
+    <line x1="20" y1="80" x2="900" y2="80" stroke="#d1d5db" stroke-width="3"/>
+    <!-- Phase dots -->
+    <circle cx="120" cy="80" r="10" fill="#8b5cf6" stroke="#fff" stroke-width="3"/>
+    <circle cx="270" cy="80" r="10" fill="#3b82f6" stroke="#fff" stroke-width="3"/>
+    <circle cx="420" cy="80" r="10" fill="#ef4444" stroke="#fff" stroke-width="3"/>
+    <circle cx="560" cy="80" r="10" fill="#f59e0b" stroke="#fff" stroke-width="3"/>
+    <circle cx="680" cy="80" r="10" fill="#10b981" stroke="#fff" stroke-width="3"/>
+    <circle cx="780" cy="80" r="10" fill="#ec4899" stroke="#fff" stroke-width="3"/>
+    <circle cx="880" cy="80" r="10" fill="#06b6d4" stroke="#fff" stroke-width="3"/>
+    <!-- Labels above -->
+    <text x="120" y="55" text-anchor="middle" font-size="11" font-weight="700" fill="#7c3aed">Phase 0</text>
+    <text x="120" y="40" text-anchor="middle" font-size="9" fill="#6b7280">2024.12</text>
+    <text x="270" y="55" text-anchor="middle" font-size="11" font-weight="700" fill="#2563eb">Phase 1</text>
+    <text x="270" y="40" text-anchor="middle" font-size="9" fill="#6b7280">2024.12</text>
+    <text x="420" y="55" text-anchor="middle" font-size="11" font-weight="700" fill="#dc2626">Phase 2</text>
+    <text x="420" y="40" text-anchor="middle" font-size="9" fill="#6b7280">2025.03</text>
+    <text x="560" y="55" text-anchor="middle" font-size="11" font-weight="700" fill="#d97706">Phase 3</text>
+    <text x="560" y="40" text-anchor="middle" font-size="9" fill="#6b7280">2025.03~04</text>
+    <text x="680" y="55" text-anchor="middle" font-size="11" font-weight="700" fill="#059669">Phase 4</text>
+    <text x="680" y="40" text-anchor="middle" font-size="9" fill="#6b7280">2025.04</text>
+    <text x="780" y="55" text-anchor="middle" font-size="11" font-weight="700" fill="#db2777">Phase 5</text>
+    <text x="780" y="40" text-anchor="middle" font-size="9" fill="#6b7280">2025.04</text>
+    <text x="880" y="55" text-anchor="middle" font-size="11" font-weight="700" fill="#0891b2">Phase 6</text>
+    <text x="880" y="40" text-anchor="middle" font-size="9" fill="#6b7280">2026.05</text>
+    <!-- Labels below -->
+    <text x="120" y="110" text-anchor="middle" font-size="9" fill="#7c3aed">DELI-2847</text>
+    <text x="120" y="124" text-anchor="middle" font-size="8" fill="#6b7280">原始创建</text>
+    <text x="270" y="110" text-anchor="middle" font-size="9" fill="#2563eb">DELI-3103</text>
+    <text x="270" y="124" text-anchor="middle" font-size="8" fill="#6b7280">item limit</text>
+    <text x="420" y="110" text-anchor="middle" font-size="9" fill="#dc2626">DELI-3406/8</text>
+    <text x="420" y="124" text-anchor="middle" font-size="8" fill="#6b7280">事故修复</text>
+    <text x="560" y="110" text-anchor="middle" font-size="9" fill="#d97706">DELI-3472</text>
+    <text x="560" y="124" text-anchor="middle" font-size="8" fill="#6b7280">乐观锁</text>
+    <text x="680" y="110" text-anchor="middle" font-size="9" fill="#059669">DELI-3614</text>
+    <text x="680" y="124" text-anchor="middle" font-size="8" fill="#6b7280">三级规则</text>
+    <text x="780" y="110" text-anchor="middle" font-size="9" fill="#db2777">DELI-3632</text>
+    <text x="780" y="124" text-anchor="middle" font-size="8" fill="#6b7280">Cancel修复</text>
+    <text x="880" y="110" text-anchor="middle" font-size="9" fill="#0891b2">DELI-4494</text>
+    <text x="880" y="124" text-anchor="middle" font-size="8" fill="#6b7280">30min缓冲</text>
+  </svg>
+  </div>
+</section>
+
+<!-- ====== PHASE DETAILS ====== -->
+<section class="card">
+  <h2>📜 逐 Phase 详述</h2>
+
+  <div class="tl">
+
+    <!-- Phase 0 -->
+    <div class="tl-item">
+      <div class="tl-dot p0"></div>
+      <div class="tl-date">2024-12-08 ~ 2024-12-11</div>
+      <span class="tl-badge p0">Phase 0</span>
+      <div class="tl-title">DELI-2847 · Wonder Spot Delivery Creation — 原始创建</div>
+      <div class="tl-desc">
+        <p>Wonder Spot 配送系统的诞生。拆单规则<strong>从第一天就刻在基因里</strong>：</p>
+        <ul>
+          <li><strong>分组键</strong>：<span class="code-ref">CorporateTaskGroupKey(corporateId, groupNumber)</span> — 与现在完全相同</li>
+          <li><strong>groupNumber</strong>：配送时间窗 <span class="code-ref">"{start}_{end}"</span>（WonderSpotAppendTaskBuilder）</li>
+          <li><strong>tryAppend</strong>：尝试追加到已有 Job 的框架已存在</li>
+          <li><strong>APPENDABLE_JOB_STATUSES</strong>：{CREATED, ASSIGNED, PICKUP_ENROUTE, PICKUP_ARRIVED}</li>
+          <li><strong>原始 Item 上限</strong>：<code>wonderSpotMaxOrderItemCount</code>（全局配置）</li>
+          <li>commit: <span class="code-ref">1b008fdea</span> · author: kentkang</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Phase 1 -->
+    <div class="tl-item">
+      <div class="tl-dot p1"></div>
+      <div class="tl-date">2024-12-09</div>
+      <span class="tl-badge p1">Phase 1</span>
+      <div class="tl-title">DELI-3103 · Job Creation — 移除全局 Item 上限</div>
+      <div class="tl-desc">
+        <ul>
+          <li>移除 <code>wonderSpotMaxOrderItemCount</code> 全局限制</li>
+          <li>改用 <code>corporate_item_limit</code>（与 corporate 绑定，更灵活）</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Phase 2 -->
+    <div class="tl-item">
+      <div class="tl-dot p2"></div>
+      <div class="tl-date">2025-03-10 ~ 2025-03-17</div>
+      <span class="tl-badge p2">Phase 2</span>
+      <div class="tl-title">DELI-3406 → DELI-3408 · 生产事故驱动修复</div>
+      <div class="tl-desc">
+        <p><strong>DELI-3406</strong>（生产事故）：Wonder Spot Delivery 的 Ready Event 未被触发，订单卡住无法进入取餐流程。</p>
+        <p><strong>DELI-3408</strong>（修复）：</p>
+        <ul>
+          <li>忽略 15 分钟限制：provider 分配失败时不阻塞 Job 创建</li>
+          <li>job_id 全链路迁移：provider 失败重试时确保旧 job_id 正确迁移到新 Job</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Phase 3 -->
+    <div class="tl-item">
+      <div class="tl-dot p3"></div>
+      <div class="tl-date">2025-03-28 ~ 2025-04-03</div>
+      <span class="tl-badge p3">Phase 3</span>
+      <div class="tl-title">DELI-3472 · 乐观锁 + 独立 Consumer</div>
+      <div class="tl-desc">
+        <p>父需求 DELI-3447（并发安全）：</p>
+        <ul>
+          <li><strong>乐观锁</strong>：<span class="code-ref">jobRepository.partialUpdate</span> 带版本号条件，防止并发 Append 时 data race
+            <pre class="code"><span class="kw">success</span> = jobRepository.partialUpdate(appendedJob.job,
+    <span class="str">"job_status IN (...) AND version = ?"</span>,  <span class="cmt">// ← 乐观锁</span>
+    APPENDABLE_JOB_STATUSES, currentVersion);</pre>
+          </li>
+          <li><strong>独立 consumer group</strong>：Kafka consumer 隔离，避免与其他服务竞争</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Phase 4 -->
+    <div class="tl-item">
+      <div class="tl-dot p4"></div>
+      <div class="tl-date">2025-04-24 ~ 2025-04-27</div>
+      <span class="tl-badge p4">Phase 4</span>
+      <div class="tl-title">DELI-3614 · Append 三级规则 — 最大飞跃</div>
+      <div class="tl-desc">
+        <p>父需求 DELI-2476（拆单/合批总纲）。三个关键变更：</p>
+        <ul>
+          <li><strong>4a. 新增 APPENDABLE_JOB_ORDER_STATUSES</strong>：在 JobStatus 过滤之上增加 OrderStatus 维度
+            <table style="margin:8px 0;">
+              <tr><th>OrderStatus</th><th>追加？</th><th>理由</th></tr>
+              <tr><td>NEW, ACCEPTED, HELD, ASSIGNED_TO_POD, IN_COOKING</td><td class="yes">✅</td><td>备货阶段</td></tr>
+              <tr><td>PENDING_PACKAGE, PENDING_BAGGING, READY_FOR_PICKUP</td><td class="no">❌</td><td>已进入出货流程</td></tr>
+              <tr><td>CANCELED</td><td class="no">❌</td><td>已取消</td></tr>
+            </table>
+          </li>
+          <li><strong>4b. Pre-allocate 机制</strong>：新增 <span class="code-ref">appendToPreAllocatedJobs</span>，Append 从单级升级为两级</li>
+          <li><strong>4c. 15min Release Buffer</strong>：<span class="code-ref">PRE_ALLOCATE_CORPORATE_BUFFER_IN_MINUETS = 15</span></li>
+          <li><strong>4d. mergeJobOrderStatusTracking</strong>：Job 创建后合并 Task 级别 tracking</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Phase 5 -->
+    <div class="tl-item">
+      <div class="tl-dot p5"></div>
+      <div class="tl-date">2025-04-27</div>
+      <span class="tl-badge p5">Phase 5</span>
+      <div class="tl-title">DELI-3632 · Cancel 边界修复</div>
+      <div class="tl-desc">
+        <ul>
+          <li>场景：预分配 Job 中所有 task 被 cancel → 后续同时间窗新 task 无法创建</li>
+          <li>修复：<span class="code-ref">isPreAllocatedJobAppendable</span> 增加全 cancel 检查，全 cancel 的预分配 Job 被过滤，允许新建</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Phase 6 -->
+    <div class="tl-item">
+      <div class="tl-dot p6"></div>
+      <div class="tl-date">2026-05-28 ~ 2026-05-29</div>
+      <span class="tl-badge p6">Phase 6</span>
+      <div class="tl-title">DELI-4494 · GH Wonder Spot 30min 缓冲</div>
+      <div class="tl-desc">
+        <ul>
+          <li>GH Wonder Spot group order 的预分配 release buffer <strong>15 → 30 分钟</strong></li>
+          <li>通过 DevCycle feature flag <span class="code-ref">getWonderSpotGH30MinReleaseTargetCorporates</span> 灰度控制</li>
+          <li><pre class="code"><span class="kw">private int</span> resolveReleaseBufferMinutes(DBProviderType providerType, String corporateId) {
+    <span class="kw">if</span> (providerType == GRUBHUB
+        && featureFlagService.getWonderSpotGH30MinReleaseTargetCorporates().contains(corporateId)) {
+        <span class="kw">return</span> <span class="num">30</span>;  <span class="cmt">// GH Wonder Spot 特定 corporate</span>
+    }
+    <span class="kw">return</span> <span class="num">15</span>;      <span class="cmt">// 默认</span>
+}</pre></li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ====== EVOLUTION TABLE ====== -->
+<section class="card">
+  <h2>📊 各维度演进对照表</h2>
+  <div style="overflow-x:auto;">
+  <table>
+    <tr><th>维度</th><th>Phase 0<br>DELI-2847</th><th>Phase 1<br>DELI-3103</th><th>Phase 2<br>DELI-3408</th><th>Phase 3<br>DELI-3472</th><th>Phase 4<br>DELI-3614</th><th>Phase 5<br>DELI-3632</th><th>Phase 6<br>DELI-4494</th></tr>
+    <tr>
+      <td><strong>分组键</strong></td>
+      <td>corporate + groupNumber</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td>
+    </tr>
+    <tr>
+      <td><strong>Append 级数</strong></td>
+      <td>1 级（真实 Job）</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td class="new"><strong>2 级</strong>（Pre-allocate → 真实）</td><td>→ 不变</td><td>→ 不变</td>
+    </tr>
+    <tr>
+      <td><strong>JobStatus 过滤</strong></td>
+      <td>✅ CREATED~PICKUP_ARRIVED</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td>
+    </tr>
+    <tr>
+      <td><strong>OrderStatus 过滤</strong></td>
+      <td class="no">❌ 无</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td class="new"><strong>✅ 三级规则</strong></td><td>→ 不变</td><td>→ 不变</td>
+    </tr>
+    <tr>
+      <td><strong>Item 上限</strong></td>
+      <td>全局 maxOrderItemCount</td><td class="new">corporate_item_limit</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td>
+    </tr>
+    <tr>
+      <td><strong>并发安全</strong></td>
+      <td class="no">❌ 无</td><td>→ 不变</td><td>→ 不变</td><td class="new"><strong>✅ 乐观锁</strong></td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td>
+    </tr>
+    <tr>
+      <td><strong>Release Buffer</strong></td>
+      <td class="no">❌ 无</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td class="new"><strong>15min</strong></td><td>→ 不变</td><td class="new"><strong>30min (GH)</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Tracking 合并</strong></td>
+      <td class="no">❌ 无</td><td>→ 不变</td><td>→ 不变</td><td>→ 不变</td><td class="new"><strong>✅ mergeTracking</strong></td><td>→ 不变</td><td>→ 不变</td>
+    </tr>
+  </table>
+  </div>
+  <p style="margin-top: 8px; font-size: 0.82rem; color: var(--muted);">✨ = 该 Phase 新增的能力</p>
+</section>
+
+<!-- ====== DRIVERS ====== -->
+<section class="card">
+  <h2>🎯 演进驱动力</h2>
+  <table>
+    <tr><th>驱动力</th><th>工单</th><th>推动的变更</th></tr>
+    <tr>
+      <td><strong>业务需求</strong></td>
+      <td>DELI-2847, DELI-2476</td>
+      <td>Wonder Spot corporate 订单天然需要按企业 + 时间窗拆分/合并 → 分组键与 Append 框架从诞生就存在</td>
+    </tr>
+    <tr>
+      <td><strong>生产事故</strong></td>
+      <td>DELI-3406</td>
+      <td>Ready Event 未触发暴露 Append 后状态流转缺陷 → job_id 迁移 + 容错修复</td>
+    </tr>
+    <tr>
+      <td><strong>并发压力</strong></td>
+      <td>DELI-3472, DELI-3447</td>
+      <td>高并发下 data race → 乐观锁 + 独立 consumer group</td>
+    </tr>
+    <tr>
+      <td><strong>运营精细化</strong></td>
+      <td>DELI-3614</td>
+      <td>仅按 JobStatus 不够 → OrderStatus 三级规则防止出货中订单被错误合并</td>
+    </tr>
+    <tr>
+      <td><strong>配送商差异</strong></td>
+      <td>DELI-4494</td>
+      <td>GH group order 需要更长缓冲 → 15→30min + DevCycle 灰度</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ====== CURRENT STATE ====== -->
+<section class="card">
+  <h2>🔧 当前拆单规则（Phase 6 终态）</h2>
+  <pre class="code"><span class="cmt">// CorporateJobCreationService.java — 拆单规则完整流程</span>
+
+<span class="cmt">// 1. 分组键（从 DELI-2847 延续至今）</span>
+<span class="kw">class</span> CorporateTaskGroupKey {
+    String corporateId;
+    String groupNumber;  <span class="cmt">// = "{deliveryTimeslotStart}_{deliveryTimeslotEnd}"</span>
+}
+
+<span class="cmt">// 2. 可追加条件（JobStatus + OrderStatus 双维度）</span>
+<span class="kw">static final</span> APPENDABLE_JOB_STATUSES = {
+    CREATED, ASSIGNED, PICKUP_ENROUTE, PICKUP_ARRIVED
+};
+<span class="kw">static final</span> APPENDABLE_JOB_ORDER_STATUSES = {
+    NEW, ACCEPTED, HELD, ASSIGNED_TO_POD, IN_COOKING
+};
+
+<span class="cmt">// 3. 两级 Append</span>
+<span class="kw">List</span> tryAppend(corporateId, groupNumber, taskParams, setting) {
+    <span class="cmt">// ① 先试 Pre-allocated Jobs</span>
+    result = appendToPreAllocatedJobs(corporateId, groupNumber, taskParams);
+    <span class="kw">if</span> (!result.isEmpty()) <span class="kw">return</span> result;
+    <span class="cmt">// ② 再试 Truly Created Jobs</span>
+    <span class="kw">return</span> appendToTrulyCreationJobs(corporateId, groupNumber, taskParams);
+}
+
+<span class="cmt">// 4. Release Buffer（DELI-4494 定制）</span>
+<span class="kw">int</span> resolveReleaseBufferMinutes(providerType, corporateId) {
+    <span class="kw">if</span> (providerType == GRUBHUB
+        && featureFlagService.getWonderSpotGH30MinReleaseTargetCorporates()
+            .contains(corporateId)) {
+        <span class="kw">return</span> <span class="num">30</span>;  <span class="cmt">// GH Wonder Spot 特定</span>
+    }
+    <span class="kw">return</span> <span class="num">15</span>;      <span class="cmt">// 默认</span>
+}
+
+<span class="cmt">// 5. 乐观锁（DELI-3472）</span>
+success = jobRepository.partialUpdate(job,
+    <span class="str">"job_status IN (...) AND version = ?"</span>,
+    APPENDABLE_JOB_STATUSES, currentVersion);</pre>
+</section>
+
+<!-- ====== EVIDENCE ====== -->
+<section class="card">
+  <h2>🔗 证据索引</h2>
+  <div class="ev-grid">
+    <div class="ev-item"><span class="ev-type ev-code">code</span> CorporateJobCreationService.java:60-61</div>
+    <div class="ev-item"><span class="ev-type ev-code">code</span> CorporateJobCreationService.java:92</div>
+    <div class="ev-item"><span class="ev-type ev-code">code</span> CorporateJobCreationService.java:253-263</div>
+    <div class="ev-item"><span class="ev-type ev-code">code</span> CorporateJobCreationService.java:276-287</div>
+    <div class="ev-item"><span class="ev-type ev-code">code</span> CorporateJobCreationService.java:176-181</div>
+    <div class="ev-item"><span class="ev-type ev-code">code</span> CorporateJobCreationService.java:418-439</div>
+    <div class="ev-item"><span class="ev-type ev-code">code</span> WonderSpotAppendTaskBuilder.java:36-37</div>
+    <div class="ev-item"><span class="ev-type ev-code">code</span> WonderSpotAppendTaskBuilder.java:62</div>
+    <div class="ev-item"><span class="ev-type ev-commit">commit</span> hdr-delivery-project@1b008fdea</div>
+    <div class="ev-item"><span class="ev-type ev-commit">commit</span> hdr-delivery-project@66cdd7490</div>
+    <div class="ev-item"><span class="ev-type ev-commit">commit</span> hdr-delivery-project@ede4e2d8c</div>
+    <div class="ev-item"><span class="ev-type ev-commit">commit</span> hdr-delivery-project@31625bcb7</div>
+    <div class="ev-item"><span class="ev-type ev-jira">jira</span> DELI-2847</div>
+    <div class="ev-item"><span class="ev-type ev-jira">jira</span> DELI-3406</div>
+    <div class="ev-item"><span class="ev-type ev-jira">jira</span> DELI-3408</div>
+    <div class="ev-item"><span class="ev-type ev-jira">jira</span> DELI-3472</div>
+    <div class="ev-item"><span class="ev-type ev-jira">jira</span> DELI-3614</div>
+    <div class="ev-item"><span class="ev-type ev-jira">jira</span> DELI-3632</div>
+    <div class="ev-item"><span class="ev-type ev-jira">jira</span> DELI-4494</div>
+  </div>
+</section>
+
+<footer>
+  <p>📋 queryId: q-20260613-002 · 报告生成: 2026-06-13 · 产出: dm-seek team (dongmei-ma 协调)</p>
+  <p style="margin-top:4px;">证据来源: hdr-delivery-project 本地仓库 + Jira MCP · 拆单规则从 2024-12 延续至今，核心分组键从未改变</p>
+</footer>
+
+</div>
+</body>
+</html>

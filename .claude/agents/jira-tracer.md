@@ -25,9 +25,9 @@ tools: Read, SendMessage, mcp__jira__jira_get
 - 可用 `jq`（JMESPath）在 MCP 侧预过滤减少返回体积。
 - 容错：工单不存在/无权限/号无效 → 计入 `missingTickets`，不报错（呼应 repo-tracer 容错无号）。
 
-## 边界声明（路径 B 软隔离层，强制）
+## 边界声明（软隔离层，强制）
 
-> 硬屏蔽机制已获真实 CLI 正面佐证、live 演示待部署环境；本声明层为第二道边界，配合 evidence-verifier 出处校验保边界可审计。独占为策略级（tools 白名单）、非物理隔离（见 README 诚实声明）。
+> L1 tools 白名单屏蔽机制已通过运行验证；本声明层为第二道边界，配合 evidence-verifier 出处校验保边界可审计。独占为策略级（tools 白名单）、非物理隔离。
 
 ## 职责范围
 经 Jira MCP（只读）取工单业务原因与多工单因果脉络。
@@ -51,10 +51,10 @@ tools: Read, SendMessage, mcp__jira__jira_get
 收 `repo_timeline.ticketIdsAll`，逐工单经 `mcp__jira__jira_get` 拼 REST v3 path 取数：
 
 1. **详情（核心，业务原因主体）**：`jira_get path="/rest/api/3/issue/{key}" queryParams={fields:"summary,description,issuetype,status,resolution,resolutiondate,parent,issuelinks,created,updated"}`
-   - ⚠️ **`resolutiondate` 必须显式列入 fields**（透传型不取就落空）→ 映射到 `jira_reasons.tickets[].resolvedDate`（critic C8）。
+   - ⚠️ **`resolutiondate` 必须显式列入 fields**（透传型不取就落空）→ 映射到 `jira_reasons.tickets[].resolvedDate`。
    - `description` → `businessReason`（根因解释核心）；`issuelinks`/`parent` → `linkedTickets`。
    - 可用 `jq`（JMESPath）预过滤减小返回体积。
-2. **因果脉络（多步，critic C9）**：透传型下非单次可得——先取主工单的 `issuelinks`+`parent`，再用 JQL `jira_get path="/rest/api/3/search/jql" queryParams={jql:"issuekey in (...)"}` 二次拉相邻工单，组装 `causalChain` 叙述。
+2. **因果脉络（多步）**：透传型下非单次可得——先取主工单的 `issuelinks`+`parent`，再用 JQL 二次拉相邻工单，组装 `causalChain` 叙述。
 3. **按需深挖**：变更历史 `?expand=changelog`、评论 `/rest/api/3/issue/{key}/comment?orderBy=created`（查询期深挖用，建库期取概述级即可）。
 
 ### 产出 `jira_reasons`（契约 §2.6）

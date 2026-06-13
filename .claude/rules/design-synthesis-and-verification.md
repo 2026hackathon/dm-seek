@@ -1,18 +1,6 @@
-# 马冬梅计划 — 综合(synthesizer) + 校验(evidence-verifier) 方法论定稿
+# 综合(synthesizer) + 校验(evidence-verifier) 方法论
 
-| 项目 | 内容 |
-| --- | --- |
-| 文档类型 | 设计定稿（synthesizer 9 类场景分析方法骨架 + evidence-verifier 置信度判据/缺口格式） |
-| 适用产品 | 马冬梅计划（dm-seek） |
-| 关联 PRD | `马冬梅计划-PRD.md` v0.3（§5 场景、§4.1/§4.3 置信度与返工、§6.1 角色） |
-| 协同契约 | `design-agent-io-schema-reference.md`（§2.7 synthesis / §2.8 verification / §7 返工循环与发散清单） |
-| 输入来源 | code-analyst(code_location_set) + repo-tracer(repo_timeline) + jira-tracer(jira_reasons) |
-| 版本 | v1.0（待 critic 审视 T7） |
-| 日期 | 2026-06-12 |
-| 负责人 | core-dev |
-| 状态 | 待审视 |
-
-> 本文定稿两件事：(1) synthesizer 对 PRD §5 九类场景的分析方法骨架，抽出可复用通用步骤并确定哪些沉淀为 skill；(2) evidence-verifier 的三级置信度判据、逐结论出处校验规则、缺口标注格式（与契约 §7.3 发散清单对齐）。供 #14（synthesizer + verifier + 分析方法 skill）实现依赖。
+> synthesizer 的九类场景分析方法骨架 + evidence-verifier 的三级置信度判据、逐结论出处校验规则、缺口标注格式。
 
 ---
 
@@ -26,7 +14,7 @@
 
 | 步 | 名称 | 动作 | 产出落点（契约 §2.7 synthesis） |
 | --- | --- | --- | --- |
-| S1 | 三源对齐 | 把 code_location_set / repo_timeline / jira_reasons 按 **代码实体 ↔ commit ↔ 工单** 三方关联对齐（以代码实体为锚，PRD §1.2） | `sourcesPresent{code,git,jira}` |
+| S1 | 三源对齐 | 把 code_location_set / repo_timeline / jira_reasons 按 **代码实体 ↔ commit ↔ 工单** 三方关联对齐（以代码实体为锚） | `sourcesPresent{code,git,jira}` |
 | S2 | 时间线编织 | 按 commit date 排出演变序列，每个节点挂 `工单号 + 业务原因`，标 primary/context | `timelineNarrative` |
 | S3 | 结论生成 | 按场景侧重维度生成 `conclusions[]`，每条限定 `dimension∈{current_state,timeline,root_cause}` | `conclusions[].statement/dimension` |
 | S4 | 出处挂接 | 每条结论强制挂 `evidence[]`（code/commit/jira），无出处的判断移入 `unknowns` 而非冒充结论 | `conclusions[].evidence` / `unknowns` |
@@ -39,7 +27,7 @@
 
 每类 = `synthesis-core` + 侧重维度 + 特化步骤。`analysisMethod` 取值即各场景 method id（命名规范 `<scene-slug>-v1`）。
 
-| # | 场景 (PRD §5) | method id | 主侧重维度 | 特化步骤（在 S2/S3 注入） | 三源关键依赖 |
+| # | 场景 | method id | 主侧重维度 | 特化步骤（在 S2/S3 注入） | 三源关键依赖 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | 实现与需求文档差异核查 | `diff-doc-vs-impl-v1` | root_cause + timeline | 对比「Jira 描述的预期」vs「代码实际实现」，定位**先变的是 Jira 还是代码**（比对工单 resolvedDate 与 commit date 先后），给差异时间节点 + 责任工单 | jira(描述) + git(时间) + code(实现) 三源缺一即降级 |
 | 2 | 新需求影响范围评估 | `impact-scope-v1` | current_state | 沿 code-analyst 调用链输出**模块依赖图**；用 git 历史找该区域**历史变更模式/高频共变文件**，提示隐性耦合 | code(调用链) 主；git(共变) 辅；jira 可缺 |
@@ -51,7 +39,7 @@
 | 8 | 跨团队接口争议仲裁 | `interface-arbitration-v1` | current_state + timeline | 并排「接口约定变更记录（工单/interface 模块 commit）」vs「实现侧代码记录」，把争论转为事实核对；跨仓常见 | code(两侧实现) + git(两侧变更史) 主；jira 佐证约定 |
 | 9 | 设计与实现对齐审查（含 Figma） | `design-impl-alignment-v1` | current_state | **二期**：并排「代码改了什么」vs「设计意图（Figma）」，明确偏差来源；依赖 design-tracer | + Figma 源（二期）；首版不实现 |
 
-> 沉淀决策：**`synthesis-core` 是唯一强制 skill**；9 个场景方法以「method 片段」形式收在同一 skill 的场景库内（单 skill 多 method，类比 core-ng 规则集中一处），便于扩展新场景（PRD §5 明确清单可扩展）。不为每场景建独立 skill，避免碎片化。场景 9 标记二期、占位不实现。
+> 沉淀决策：**`synthesis-core` 是唯一强制 skill**；9 个场景方法以「method 片段」形式收在同一 skill 的场景库内（单 skill 多 method，类比 core-ng 规则集中一处），不为每场景建独立 skill，避免碎片化。场景 9 标记二期、占位不实现。
 
 ## 3. 场景选择与降级
 
@@ -62,7 +50,7 @@
 
 ## 第二部分：evidence-verifier 校验
 
-## 4. 逐结论出处校验规则（PRD §4.2 / 契约 §2.8）
+## 4. 逐结论出处校验规则
 
 对 `synthesis.conclusions[]` 每条执行：
 
@@ -76,14 +64,14 @@
    - 维度缺对应出处类型 → 该结论 `ok=false` 或降级标记。
 5. **结论 ok 汇总**：所有关键结论 ok 且无遗漏维度 → 倾向 sufficient。
 
-## 5. 三级置信度判据（细化 PRD O4，固化为可判定规则）
+## 5. 三级置信度判据
 
 主判据（基于 `sourcesPresent` + 逐结论校验）：
 
 | 置信度 | 判据（全部满足） |
 | --- | --- |
 | **高** | code ∧ git ∧ jira 三源齐备；**且互相印证**（S5 无未解冲突）；**且**每条结论均挂合法出处、维度-出处匹配。**root_cause 维度须有独立 jira 工单印证** |
-| **中** | 三源不全但核心成立：缺 jira 业务原因（有 code+git，知「怎么变」不知「为什么」）；**或**仅有 git 时间线缺 code 解读印证；**或** root_cause 仅由含充分业务说明的 commit message 顶替独立 jira 工单（**此情形置信度封顶为中**，critic C4）；结论仍各有出处 | 
+| **中** | 三源不全但核心成立：缺 jira 业务原因（有 code+git，知「怎么变」不知「为什么」）；**或**仅有 git 时间线缺 code 解读印证；**或** root_cause 仅由含充分业务说明的 commit message 顶替独立 jira 工单（**此情形置信度封顶为中**）；结论仍各有出处 | 
 | **低** | 关键结论主要依赖推断、缺直接出处；**或**仅单源；**或**三源互相矛盾且无法以代码为锚定论 |
 
 附加下调因素（命中则在主判据基础上**下调一档**或显式标注，来自双源/路由与抽取风险）：
@@ -138,19 +126,12 @@
 - `verdict=insufficient`：通常 confidence=低或关键结论 ok=false → dongmei-ma 据 round 决定发散（<2）或降级交付（==2，契约 §7.1）。
 - verifier **只判定与建议**，不自行重派（重派是 dongmei-ma 职责，契约 §7）；verifier 跨轮对比 gaps 是否收敛，未收敛则在 divergeHints 提示「换策略」（契约 §7.3 防空转）。
 
-> 中置信度是否算 sufficient 可交付：本定稿采「**中可交付但显式标注**」（PRD §4.3「输出含置信度」、O5 仅对「不足」才返工/降级）。即返工只为把「低/不足」救到「中/高」，不为把「中」刷到「高」而空转。此口径请 critic 确认。
+> 中置信度可交付但显式标注：返工只为把「低/不足」救到「中/高」，不为把「中」刷到「高」而空转。
 
 ---
 
-## 8. 对下游任务的契约要点
+## 8. 对下游
 
-- **#14 synthesizer**：实现 `synthesis-core` 六步为单一 skill；9 场景 method 收于同一 skill 场景库（单 skill 多 method）；以代码为锚、缺源入 unknowns 不空想；输出对齐契约 §2.7。
-- **#14 evidence-verifier**：实现 §4 逐结论校验 + §5 三级判据（含附加下调因素）+ §6 缺口格式与 hint 映射；输出对齐契约 §2.8；只判定不重派。
-- **分析方法 skill 交付物（落点已定，路径 B）**：即 `synthesis-core` skill（含 9 场景 method 场景库），**必须落项目级 `.claude/skills/synthesis-core/`**，由 synthesizer（及 evidence-verifier 若复用 skill）从项目级目录加载。**不得走 agent frontmatter 的 `skills` 字段**——本项目为 agent team（teammate 形态），官方语义下 teammate **不应用** subagent frontmatter 的 `skills`/`mcpServers`（与常规会话相同，从 project/user settings 加载）。故所有 dm-seek skill 一律置于 `.claude/skills/`，与 `design-mcp-config-shape.md`（路径 B）一致。
-
-## 9. 开放点（**全部已裁定，T7 critic + tech-lead 2026-06-12**）
-
-1. ~~中置信度可交付口径~~ **已裁定（critic C3 认可）**：中可交付但显式标注，返工只救「低/不足」、不为把「中」刷到「高」而空转（§7）。
-2. ~~维度-出处强制度~~ **已裁定（critic C4 认可）**：root_cause 默认应有独立 jira 工单；**无独立工单时，含充分业务说明的 commit message 可顶**，但该结论**置信度封顶为中**（commit 自述弱于独立工单印证），高仍要求独立 jira（§4.4 / §5）。
-3. ~~method 命名与 skill 落点~~ **已裁定**：method 命名 `<scene-slug>-v1`、单 skill 多 method；skill 落点 = 项目级 `.claude/skills/synthesis-core/`（路径 B，§8）。
-4. ~~场景 9 二期占位形态~~ **已裁定**：skill 场景库先留 `design-impl-alignment-v1` 的 **stub method（标二期、不实现）**，便于扩展不破坏场景库结构，待 design-tracer 接入。
+- **synthesizer**：实现 `synthesis-core` 六步为单一 skill；9 场景 method 收于同一 skill 场景库（单 skill 多 method）；以代码为锚、缺源入 unknowns 不空想。
+- **evidence-verifier**：实现 §4 逐结论校验 + §5 三级判据（含附加下调因素）+ §6 缺口格式与 hint 映射；只判定不重派。
+- **分析方法 skill**：即 `synthesis-core` skill（含 9 场景 method 场景库），落项目级 `.claude/skills/synthesis-core/`。

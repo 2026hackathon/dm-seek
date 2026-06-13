@@ -69,8 +69,7 @@ dm-seek/
    - Jira：`DMSEEK_JIRA_SITE_NAME` / `DMSEEK_JIRA_EMAIL` / `DMSEEK_JIRA_API_TOKEN`
    - 设完变量后**重启 Claude Code / 终端**，`${VAR}` 才能展开。
 3. **多仓**：每个 git repo 对应 `.mcp.json` 里一个 `github-<repoSlug>` 实例（独立 token）；引导 skill 增量追加，并同步把对应 `mcp__github-<repoSlug>__*` 工具加入 `repo-tracer` 的 `tools` 白名单。
-4. **启动团队**：运行 `claude --agent dongmei-ma`——主会话即是协调者 `dongmei-ma`（无中间层），首次启动自动建团 + 召唤其余成员（kb-keeper / code-analyst / repo-tracer / jira-tracer / synthesizer / evidence-verifier），随后回归协调者角色。
-   > 启动机制（`dongmei-ma.md` 的 frontmatter `initialPrompt` 自动提交）为**待坐实承重假设**（验证步骤见 `docs/验证-TC-7.6-独占运行时验证步骤.md` 的 TC-7.7）；**若 `initialPrompt` 不生效**，则在 `--agent dongmei-ma` 会话内手动执行 `dongmei-ma.md`「§0 启动职责」的建团 + 召唤步骤，效果等价。
+4. **启动团队**：运行 `claude --agent dongmei-ma`——主会话即是协调者 `dongmei-ma`（无中间层），首次启动自动建团 + 召唤其余成员，随后回归协调者角色。`initialPrompt` 自动启动已通过运行验证（TC-7.7）。
 5. **提问**：团队就绪后直接向 `dongmei-ma` 提一句自然语言疑问，team 自动协作并交付带置信度的中文报告。
 
 ## 安全与独占声明（重要，诚实声明）

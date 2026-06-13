@@ -4,17 +4,18 @@
       "type": "http",
       "url": "${DMSEEK_GH_MCP_URL:-https://api.githubcopilot.com/mcp/}",
       "headers": {
-        "Authorization": "Bearer ${DMSEEK_GH_TOKEN_HDR_DELIVERY_PROJECT}"
+        "Authorization": "Bearer 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"
       }
     },
     "jira": {
       "type": "stdio",
-      "command": "npx",
+      "command": "D:\\nodejs\\npx.cmd",
       "args": ["-y", "@aashari/mcp-server-atlassian-jira"],
       "env": {
-        "ATLASSIAN_SITE_NAME": "${DMSEEK_JIRA_SITE_NAME}",
-        "ATLASSIAN_USER_EMAIL": "${DMSEEK_JIRA_EMAIL}",
-        "ATLASSIAN_API_TOKEN": "${DMSEEK_JIRA_API_TOKEN}"
+        "ATLASSIAN_SITE_NAME": "wonder",
+        "ATLASSIAN_USER_EMAIL": "dylanchen@xm.wonder.com",
+        "ATLASSIAN_API_TOKEN": "ATATT3xFfGF08t0mf4Zhd9CHeR1Hz0hkP8c50GpCxdj4LZSKVGYqKm87n5Ds7KBZ5N4d6sBk898c5hgfTL2-JkFaR4J1ART-oenmkWDKnbKWurW6DLQJa4oegiMrlSmlivbd-2Oz0UxGkIgsFMFntn2bDzmLjodS7hpgO7_hK_QPDeOVyyPkOoY=D5993F4A",
+        "PATH": "D:\\nodejs;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\Program Files\\Git\\cmd"
       }
     }
   }

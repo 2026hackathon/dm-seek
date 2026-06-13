@@ -13,7 +13,7 @@ description: 马冬梅计划知识库初始化——以 core-ng 的 REST 入口(
 ## 输入参数
 - `repos`：要初始化的仓库（默认全部已配置仓库，多仓**分别**初始化）。
 - `scope`：范围（默认 `all` 全部入口点；可 `service=<名>` / `module=<名>` / `package=<名>` 限定）。
-- `maxDepth`：调用链遍历深度上限（默认到 **Repository/Domain 层**止，防大仓链路爆炸；与 T2 规则表「调用链终点=存储层双形态」对齐）。
+- `maxDepth`：调用链遍历深度上限（默认到 **Repository/Domain 层**止，防大仓链路爆炸；与 coreng-recognition 规则表中「调用链终点=存储层双形态」对齐）。
 
 ## 流程（单仓；dongmei-ma 编排，逐 agent 调度）
 
