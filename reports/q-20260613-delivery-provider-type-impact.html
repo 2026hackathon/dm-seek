@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delivery Provider Type 新增影响范围分析 — q-20260613-001</title>
+<style>
+  :root {
+    --bg: #f8f9fa;
+    --card-bg: #ffffff;
+    --text: #212529;
+    --text-secondary: #6c757d;
+    --border: #dee2e6;
+    --accent: #2563eb;
+    --accent-light: #dbeafe;
+    --danger: #dc2626;
+    --danger-light: #fef2f2;
+    --warning: #f59e0b;
+    --warning-light: #fffbeb;
+    --success: #16a34a;
+    --success-light: #f0fdf4;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6; padding: 24px;
+    max-width: 1200px; margin: 0 auto;
+  }
+  header {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 24px 32px; margin-bottom: 24px; box-shadow: var(--shadow);
+  }
+  header h1 { font-size: 1.5rem; margin-bottom: 8px; }
+  header .meta { color: var(--text-secondary); font-size: .875rem; display: flex; gap: 24px; flex-wrap: wrap; }
+  .meta-item { display: flex; align-items: center; gap: 6px; }
+  .badge {
+    display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 12px;
+    font-size: .75rem; font-weight: 600;
+  }
+  .badge-high { background: var(--success-light); color: var(--success); }
+  .badge-mid { background: var(--warning-light); color: var(--warning); }
+  .badge-low { background: var(--danger-light); color: var(--danger); }
+  .badge-info { background: var(--accent-light); color: var(--accent); }
+  section {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 24px 32px; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  h2 { font-size: 1.15rem; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+  h3 { font-size: 1rem; margin: 16px 0 8px; color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: .875rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { background: var(--bg); font-weight: 600; color: var(--text-secondary); font-size: .8rem; text-transform: uppercase; }
+  tr:hover td { background: #fafbfc; }
+  .risk-high { color: var(--danger); font-weight: 600; }
+  .risk-mid { color: var(--warning); font-weight: 600; }
+  .risk-low { color: var(--success); }
+  .file-path { font-family: "SF Mono", "Fira Code", monospace; font-size: .8rem; color: var(--text-secondary); word-break: break-all; }
+  .code-block {
+    background: #1e293b; color: #e2e8f0; border-radius: var(--radius); padding: 16px;
+    font-family: "SF Mono", "Fira Code", monospace; font-size: .8rem; overflow-x: auto;
+    margin: 12px 0; line-height: 1.5;
+  }
+  .code-block .kw { color: #c084fc; }
+  .code-block .str { color: #a3e635; }
+  .code-block .cmt { color: #64748b; }
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 12px 0; }
+  .summary-card {
+    background: var(--bg); border-radius: var(--radius); padding: 16px; text-align: center;
+  }
+  .summary-card .num { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+  .summary-card .label { font-size: .8rem; color: var(--text-secondary); }
+  .timeline { position: relative; padding-left: 24px; border-left: 2px solid var(--border); margin: 12px 0; }
+  .timeline-item { margin-bottom: 16px; position: relative; }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -29px; top: 6px;
+    width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+    border: 2px solid var(--card-bg);
+  }
+  .timeline-date { font-size: .8rem; color: var(--text-secondary); }
+  .timeline-title { font-weight: 600; }
+  footer {
+    text-align: center; color: var(--text-secondary); font-size: .75rem;
+    padding: 24px; margin-top: 24px; border-top: 1px solid var(--border);
+  }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .toc a { color: var(--accent); text-decoration: none; font-size: .875rem; padding: 4px 12px; border-radius: 16px; background: var(--accent-light); }
+  .toc a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚚 Delivery Provider Type 新增影响范围分析</h1>
+  <div class="meta">
+    <span class="meta-item">📋 queryId: <strong>q-20260613-001</strong></span>
+    <span class="meta-item">📅 日期: <strong>2026-06-13</strong></span>
+    <span class="meta-item">🎯 场景: <strong>impact_scope (2)</strong></span>
+    <span class="meta-item">🔬 method: <strong>impact-scope-v1</strong></span>
+    <span class="meta-item">置信度: <span class="badge badge-high">高</span></span>
+    <span class="meta-item">返工轮次: <strong>0</strong></span>
+    <span class="meta-item">降级: <strong>否</strong></span>
+  </div>
+</header>
+
+<section>
+  <h2>📊 摘要</h2>
+  <div class="summary-grid">
+    <div class="summary-card"><div class="num">8</div><div class="label">枚举定义文件</div></div>
+    <div class="summary-card"><div class="num">4</div><div class="label">涉及模块</div></div>
+    <div class="summary-card"><div class="num">~40</div><div class="label">需修改文件</div></div>
+    <div class="summary-card"><div class="num">~20</div><div class="label">硬编码条件分支</div></div>
+    <div class="summary-card"><div class="num">7</div><div class="label">全栈层次</div></div>
+    <div class="summary-card"><div class="num">4</div><div class="label">历史新增次数</div></div>
+  </div>
+
+  <p style="margin-top:16px;">
+    <strong>一句话结论：</strong>新增 Delivery Provider Type 需要修改全栈 7 层约 40 个文件，核心风险在约 20 处硬编码 <code>== DBProviderType.XXX</code> 条件分支和 8 个枚举定义的全链路同步一致性。
+  </p>
+
+  <div class="toc">
+    <a href="#enums">① 枚举定义</a>
+    <a href="#impl">② Provider 实现</a>
+    <a href="#allocation">③ 分配逻辑</a>
+    <a href="#hardcoded">④ 硬编码分支</a>
+    <a href="#db">⑤ 数据库层</a>
+    <a href="#search">⑥ 搜索索引</a>
+    <a href="#frontend">⑦ 前端</a>
+    <a href="#timeline">⑧ 演进时间线</a>
+    <a href="#verification">⑨ 校验结果</a>
+  </div>
+</section>
+
+<section id="enums">
+  <h2>① 枚举定义 — 8 个文件，必须全改</h2>
+  <p style="color:var(--danger); margin-bottom:12px;">⚠️ 遗漏任何一个枚举都会导致运行时 <code>valueOf()</code> 抛出 <code>IllegalArgumentException</code></p>
+  <table>
+    <tr><th>文件</th><th>模块</th><th>当前值</th></tr>
+    <tr>
+      <td class="file-path">DeliveryProvider.java</td>
+      <td>wonder-delivery-provider-service-interface</td>
+      <td><span class="badge badge-info">DOORDASH</span> <span class="badge badge-info">RELAY</span> <span class="badge badge-info">NASH</span> <span class="badge badge-mid">ONFLEET</span> <span class="badge badge-mid">WONDER</span> <span class="badge badge-info">GRUBHUB</span> <strong>(6值)</strong></td>
+    </tr>
+    <tr>
+      <td class="file-path">DBProviderType.java</td>
+      <td>delivery-task-v2-service/common</td>
+      <td><span class="badge badge-info">RELAY</span> <span class="badge badge-info">NASH</span> <span class="badge badge-info">DOORDASH</span> <span class="badge badge-info">GRUBHUB</span> <span class="badge badge-info">MANUAL</span> <strong>(5值)</strong></td>
+    </tr>
+    <tr>
+      <td class="file-path">MongoProviderType.java</td>
+      <td>delivery-task-v2-service/common</td>
+      <td>RELAY, NASH, DOORDASH, GRUBHUB, MANUAL <strong>(5值)</strong></td>
+    </tr>
+    <tr>
+      <td class="file-path">MongoProviderType.java</td>
+      <td>delivery-search-service</td>
+      <td>RELAY, NASH, DOORDASH, GRUBHUB, MANUAL <strong>(5值)</strong></td>
+    </tr>
+    <tr>
+      <td class="file-path">ProviderType.java</td>
+      <td>delivery-search-service/job</td>
+      <td>DOORDASH, NASH, RELAY, GRUBHUB, MANUAL <strong>(5值)</strong></td>
+    </tr>
+    <tr>
+      <td class="file-path">ProviderTypeView.java</td>
+      <td>delivery-task-v2-service-interface</td>
+      <td>DOORDASH, NASH, RELAY, GRUBHUB, MANUAL <strong>(5值)</strong></td>
+    </tr>
+    <tr>
+      <td class="file-path">ProviderTypeView.java</td>
+      <td>delivery-search-service-interface</td>
+      <td>DOORDASH, NASH, RELAY, GRUBHUB, MANUAL <strong>(5值)</strong></td>
+    </tr>
+    <tr>
+      <td class="file-path">ProviderTypeAJAXView (api.ts)</td>
+      <td>frontend dispatch-portal-site</td>
+      <td>DOORDASH, NASH, RELAY, GRUBHUB, MANUAL <strong>(5值)</strong></td>
+    </tr>
+  </table>
+  <h3>⚠️ 已知不一致</h3>
+  <ul>
+    <li><code>DeliveryProvider</code> 含 <strong>ONFLEET</strong> 和 <strong>WONDER</strong>，但主力枚举（DBProviderType/MongoProviderType/ProviderTypeView/前端）缺失 → 设计意图未实现或已废弃</li>
+    <li><code>DBProviderType</code> 含 <strong>MANUAL</strong>，但 <code>DeliveryProvider</code>（API 接口层）缺失 → MANUAL 已落地但接口层未同步</li>
+    <li><strong>建议</strong>：新增前先统一这两组差异，避免新 Type 也出现类似不一致</li>
+  </ul>
+</section>
+
+<section id="impl">
+  <h2>② Provider 实现 — 新建服务类 + 注册</h2>
+  <table>
+    <tr><th>动作</th><th>文件</th><th>说明</th></tr>
+    <tr>
+      <td>新建实现类</td>
+      <td class="file-path">external-delivery-provider-service/.../provider/XxxProviderDeliveryTaskServiceImpl.java</td>
+      <td>参考 <code>RelayProviderDeliveryTaskServiceImpl</code>（~200行）或 <code>GrubhubProviderDeliveryTaskServiceImpl</code>，实现 create/cancel/update/tracking/toggleReady 等方法</td>
+    </tr>
+    <tr>
+      <td>注册到工厂</td>
+      <td class="file-path">ExternalDeliveryProviderServiceApp.java</td>
+      <td>将新实现注入 <code>DeliveryTaskService</code> 构造函数的 <code>ProviderDeliveryTaskService...</code> 参数</td>
+    </tr>
+    <tr>
+      <td>Webhook 处理</td>
+      <td class="file-path">external-delivery-provider-service/.../providerwebhook/processor/xxx/</td>
+      <td>按需新建 webhook event processor（参考 <code>NashEventProcessorFactory</code> / <code>DoordashWebhookService</code>）</td>
+    </tr>
+    <tr>
+      <td>SDK 客户端</td>
+      <td class="file-path">external-delivery-provider-service/.../client/</td>
+      <td>如果新 Provider 有独立 API，需要集成其 SDK（参考 <code>RelayClient</code> / <code>NashSDK</code>）</td>
+    </tr>
+  </table>
+</section>
+
+<section id="allocation">
+  <h2>③ 分配逻辑 — 3 个文件</h2>
+  <table>
+    <tr><th>文件</th><th>需要改动</th></tr>
+    <tr>
+      <td class="file-path">HDRDeliverySettingBuilder.java</td>
+      <td><code>DEFAULT_ALLOCATION_PROVIDERS = [RELAY, GRUBHUB, DOORDASH, NASH]</code> — 新 Type 是否加入默认分配列表？</td>
+    </tr>
+    <tr>
+      <td class="file-path">JobProviderAllocationService.java</td>
+      <td>如果新 Type 参与自动分配竞争，需要加入分配候选逻辑</td>
+    </tr>
+    <tr>
+      <td class="file-path">HDRAllocationSetting.java / AllocationSetting.java</td>
+      <td>MongoDB 文档中的 <code>provider_types</code> 列表</td>
+    </tr>
+  </table>
+</section>
+
+<section id="hardcoded">
+  <h2>④ 硬编码条件分支 — ~20 个文件（最大风险）</h2>
+  <p style="color:var(--danger); margin-bottom:12px;">🔴 每个文件中的 <code>== DBProviderType.XXX</code> 条件都需要逐条评估：新 Type 是否应命中该分支？</p>
+  <table>
+    <tr><th>文件</th><th>硬编码判别</th><th>风险</th></tr>
+    <tr>
+      <td class="file-path">JobProviderHelper.java</td>
+      <td><code>RELAY || GRUBHUB</code> → enableReady</td>
+      <td class="risk-high">高</td>
+    </tr>
+    <tr>
+      <td class="file-path">InternalJobRcaService.java</td>
+      <td><code>ENABLE_PROVIDERS = {RELAY, GRUBHUB}</code></td>
+      <td class="risk-high">高</td>
+    </tr>
+    <tr>
+      <td class="file-path">JobProviderFilter.java</td>
+      <td><code>ENABLED_PROVIDERS = {RELAY, GRUBHUB}</code> (RCA)</td>
+      <td class="risk-high">高</td>
+    </tr>
+    <tr>
+      <td class="file-path">JobTypeFilter.java</td>
+      <td><code>{RELAY, GRUBHUB}.contains(providerType)</code></td>
+      <td class="risk-mid">中</td>
+    </tr>
+    <tr>
+      <td class="file-path">AutoToggleReadyJobService.java</td>
+      <td><code>List.of(RELAY, GRUBHUB)</code></td>
+      <td class="risk-mid">中</td>
+    </tr>
+    <tr>
+      <td class="file-path">CorporateJobCreationService.java</td>
+      <td><code>GRUBHUB</code> 特殊 release buffer</td>
+      <td class="risk-mid">中</td>
+    </tr>
+    <tr>
+      <td class="file-path">TaskStatusUpdateService.java</td>
+      <td><code>!= GRUBHUB</code> → reset ETA</td>
+      <td class="risk-mid">中</td>
+    </tr>
+    <tr>
+      <td class="file-path">JobOperationService.java</td>
+      <td><code>== GRUBHUB || == MANUAL</code> → skip RFP</td>
+      <td class="risk-mid">中</td>
+    </tr>
+    <tr>
+      <td class="file-path">ExternalDropOffService.java</td>
+      <td><code>== RELAY && providerTriggered</code></td>
+      <td class="risk-mid">中</td>
+    </tr>
+    <tr>
+      <td class="file-path">ExternalGeneralService.java</td>
+      <td><code>== RELAY && ASSIGNED</code></td>
+      <td class="risk-low">低</td>
+    </tr>
+    <tr>
+      <td class="file-path">JobCourierService.java</td>
+      <td><code>!= GRUBHUB</code> → 拒给电话号</td>
+      <td class="risk-mid">中</td>
+    </tr>
+    <tr>
+      <td class="file-path">JobManualFulfillmentService.java</td>
+      <td><code>!= MANUAL</code> → 拒 manual 操作</td>
+      <td class="risk-high">高</td>
+    </tr>
+    <tr>
+      <td class="file-path">AutoCompleteManualDeliveryService.java</td>
+      <td><code>!= MANUAL</code> → skip</td>
+      <td class="risk-high">高</td>
+    </tr>
+    <tr>
+      <td class="file-path">AbstractRefundScenarioIdentifier.java</td>
+      <td><code>GRUBHUB</code> 特殊退款场景</td>
+      <td class="risk-mid">中</td>
+    </tr>
+    <tr>
+      <td class="file-path">ZendeskMessageBuilder.java</td>
+      <td><code>GRUBHUB && CORPORATE</code> → 特殊提示</td>
+      <td class="risk-low">低</td>
+    </tr>
+    <tr>
+      <td class="file-path">DeliveryTaskService.java</td>
+      <td><code>RELAY || GRUBHUB</code> → saveFailedTracking</td>
+      <td class="risk-mid">中</td>
+    </tr>
+    <tr>
+      <td class="file-path">InternalSimulatorService.java</td>
+      <td>排除 <code>ONFLEET</code> → 地图构建</td>
+      <td class="risk-low">低</td>
+    </tr>
+    <tr>
+      <td class="file-path">BOJobService.java</td>
+      <td><code>== RELAY</code> → 取 courier path</td>
+      <td class="risk-mid">中</td>
+    </tr>
+    <tr>
+      <td class="file-path">TaskForceCompleteService.java</td>
+      <td><code>enableReady(providerType)</code> / <code>== RELAY</code></td>
+      <td class="risk-high">高</td>
+    </tr>
+    <tr>
+      <td class="file-path">WonderOrderPickupDelayAlertProducer.java</td>
+      <td><code>MANUAL</code> 特殊过滤</td>
+      <td class="risk-low">低</td>
+    </tr>
+  </table>
+</section>
+
+<section id="db">
+  <h2>⑤ 数据库层</h2>
+  <table>
+    <tr><th>存储</th><th>影响</th><th>文件</th></tr>
+    <tr>
+      <td><strong>MySQL</strong></td>
+      <td><code>Job</code> 表的 <code>provider_type</code> 列使用 <code>DBProviderType</code> — 可能需要 <code>ALTER TABLE ... MODIFY COLUMN provider_type ENUM(...)</code></td>
+      <td class="file-path">delivery-task-v2-service/.../domain/Job.java</td>
+    </tr>
+    <tr>
+      <td><strong>MongoDB</strong></td>
+      <td>新值自动兼容（无 schema 约束），但查询/过滤/聚合逻辑会涉及新值</td>
+      <td class="file-path">JobCourierLocation, PreAllocatedJob, HDRAllocationSetting, IssuedRefundTask, JobCourierCost, JobCourierTravelRouting 等</td>
+    </tr>
+  </table>
+</section>
+
+<section id="search">
+  <h2>⑥ 搜索/ES 索引层</h2>
+  <table>
+    <tr><th>文件</th><th>影响</th></tr>
+    <tr>
+      <td class="file-path">JobDocument.java</td>
+      <td><code>providerType</code> 和 <code>parallelSearchProviderTypes</code> 字段</td>
+    </tr>
+    <tr>
+      <td class="file-path">JobIndexHelper.java</td>
+      <td><code>ProviderType.valueOf(jobDetail.providerType.name())</code> — 确保新值能映射</td>
+    </tr>
+    <tr>
+      <td class="file-path">JobSearchServiceBuilder.java</td>
+      <td><code>ProviderTypeView.valueOf(document.providerType.name())</code> — 同上</td>
+    </tr>
+  </table>
+</section>
+
+<section id="frontend">
+  <h2>⑦ 前端 — ~7 个文件</h2>
+  <table>
+    <tr><th>文件</th><th>改动</th></tr>
+    <tr><td class="file-path">api.ts</td><td><code>ProviderTypeAJAXView</code> 新增枚举值</td></tr>
+    <tr><td class="file-path">type.ts</td><td><code>labelProvider()</code> 标签映射、<code>providerLogo()</code> Logo 映射 — 新增 type 的显示名和图标</td></tr>
+    <tr><td class="file-path">ProviderCell.tsx</td><td>Provider 单元格渲染 — 新增 type 可能需要特殊渲染</td></tr>
+    <tr><td class="file-path">useProviderList.tsx</td><td>过滤掉 <code>MANUAL</code> — 新 type 是否也应过滤？</td></tr>
+    <tr><td class="file-path">AddExceptionButton/index.tsx</td><td><code>defaultExceptionProviderTypes = [RELAY, GRUBHUB]</code></td></tr>
+    <tr><td class="file-path">ReallocateDelivery.tsx</td><td>Grubhub test mode 的特殊 provider 过滤</td></tr>
+    <tr><td class="file-path">Actions/index.tsx</td><td><code>isManualProvider = provider_type === MANUAL</code></td></tr>
+    <tr><td class="file-path">CourierPhoneNumber.tsx</td><td>不同 type 显示不同 UI 逻辑</td></tr>
+  </table>
+</section>
+
+<section id="timeline">
+  <h2>⑧ 演进时间线</h2>
+  <div class="timeline">
+    <div class="timeline-item">
+      <div class="timeline-date">2023-06-19</div>
+      <div class="timeline-title">📐 DELI-567 — 初始数据模型设计</div>
+      <div style="color:var(--text-secondary);">dylanchen · e3509ff · 父工单 DELI-30</div>
+      <div>Task Flow Data Modeling Design，奠定 ProviderType 基础框架</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">2023-12-21</div>
+      <div class="timeline-title">🚪 DELI-1608 — DOORDASH 接入</div>
+      <div style="color:var(--text-secondary);">ron · 09b37e9</div>
+      <div>首个外部配送商 DoorDash 集成，新增 DOORDASH Provider Type</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">2024-07-31</div>
+      <div class="timeline-title">⚙️ DELI-2598 — Provider 分配/排序系统</div>
+      <div style="color:var(--text-secondary);">dylanchen · c3765f1</div>
+      <div>Dispatch Portal Settings - Allocation，引入 Provider 排序与分配机制</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">2025-03-05</div>
+      <div class="timeline-title">🥡 DELI-3319/3320/3336 — GRUBHUB + 分配设置</div>
+      <div style="color:var(--text-secondary);">kentkkk · 3ed89aa (merge)</div>
+      <div>Grubhub 接入 + 前端分配设置 UI，新增 GRUBHUB Provider Type</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">2025-05-29</div>
+      <div class="timeline-title">📡 DELI-3723 — Grubhub Ready 事件</div>
+      <div style="color:var(--text-secondary);">kentkang · 6caca9d</div>
+      <div>Grubhub Ready Event Sent Timeline 优化</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-date">2026-05-07~08</div>
+      <div class="timeline-title">🤲 DELI-4446 — MANUAL Type（人工配送）</div>
+      <div style="color:var(--text-secondary);">dylanchen · 77b382c / ceb152b</div>
+      <div>Wonder Spot Courier Suppression — 新增 MANUAL Provider Type，使指定 corporate 可绕过 DSP dispatch 由人工完成配送。业务原因：部分合作伙伴自配送或 courier pickup 不实用</div>
+    </div>
+  </div>
+</section>
+
+<section id="verification">
+  <h2>⑨ 证据校验结果</h2>
+  <table>
+    <tr><th>判据</th><th>状态</th><th>详情</th></tr>
+    <tr><td>code 源</td><td>✅</td><td>8 个枚举定义 + ~30 个使用点，全部可回挂到具体文件路径</td></tr>
+    <tr><td>git 源</td><td>✅</td><td>8 个关键 commit，跨 2023-06 ~ 2026-05</td></tr>
+    <tr><td>jira 源</td><td>✅</td><td>5 个工单业务原因（DELI-567, 1608, 2598, 3320, 4446）</td></tr>
+    <tr><td>三源互相印证</td><td>✅</td><td>代码实体↔commit↔工单 三元闭环完整</td></tr>
+    <tr><td>shallowWarning</td><td>✅</td><td>false（远端 GitHub MCP，无 shallow 问题）</td></tr>
+    <tr><td>reposCovered vs reposInvolved</td><td>✅</td><td>一致（单仓 food-truck/hdr-delivery-project）</td></tr>
+    <tr><td>missingTickets</td><td>✅</td><td>无（所有工单号均在 Jira 查到）</td></tr>
+    <tr style="border-top:2px solid var(--accent);"><td><strong>综合置信度</strong></td><td><span class="badge badge-high">高</span></td><td>三源齐备、互相印证、每条结论挂合法出处</td></tr>
+  </table>
+  <h3>Evidence Index</h3>
+  <table>
+    <tr><th>类型</th><th>出处</th></tr>
+    <tr><td>code</td><td class="file-path">DeliveryProvider.java, DBProviderType.java, MongoProviderType.java (×2), ProviderType.java, ProviderTypeView.java (×2), api.ts, JobProviderHelper.java, DeliveryTaskService.java 等 ~40 文件</td></tr>
+    <tr><td>commit</td><td class="file-path">e3509ff · 09b37e9 · c3765f1 · 7d2040f · 3ed89aa · 6caca9d · 77b382c · ceb152b</td></tr>
+    <tr><td>jira</td><td>DELI-567 · DELI-1608 · DELI-2598 · DELI-3320 · DELI-4446</td></tr>
+  </table>
+</section>
+
+<footer>
+  <p>dm-seek (马冬梅计划) · Agent Team: dongmei-ma + kb-keeper + code-analyst + repo-tracer + jira-tracer + synthesizer + evidence-verifier</p>
+  <p>仓库: food-truck/hdr-delivery-project · 分支: master · 报告语言: 中文</p>
+  <p style="margin-top:8px; color:var(--accent);">
+    analysisMethod: impact-scope-v1 · confidence: high · roundsUsed: 0 · sourcesPresent: {code: true, git: true, jira: true}
+  </p>
+</footer>
+
+</body>
+</html>

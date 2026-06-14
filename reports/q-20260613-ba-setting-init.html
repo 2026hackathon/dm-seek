@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BA applicationSettings 未初始化根因报告 — dm-seek</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --card-bg: #16213e;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --border: #334155;
+    --accent: #6366f1;
+    --accent-light: #312e81;
+    --green: #10b981;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+    --orange: #f97316;
+    --code-bg: #0f172a;
+    --code-text: #c9d1d9;
+    --kw: #c084fc;
+    --str: #6ee7b7;
+    --cmt: #6b7280;
+    --num: #fca5a5;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.7;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+
+  header {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4f46e5 100%);
+    color: #fff; border-radius: 12px; padding: 36px; margin-bottom: 24px;
+  }
+  header h1 { font-size: 1.75rem; margin-bottom: 8px; }
+  header .subtitle { opacity: 0.8; font-size: 0.95rem; }
+  header .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  header .meta span {
+    background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 6px; font-size: 0.82rem;
+  }
+
+  .card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 28px; margin-bottom: 20px;
+  }
+  .card h2 { font-size: 1.25rem; margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+  .card h3 { font-size: 1.05rem; margin: 18px 0 10px; color: var(--accent); }
+
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 4px;
+    font-size: 0.82rem; font-weight: 600;
+  }
+  .badge-high { background: #064e3b; color: var(--green); }
+  .badge-root { background: #7f1d1d; color: var(--red); }
+  .badge-fix  { background: #064e3b; color: var(--green); }
+  .badge-data { background: #1e3a5f; color: var(--blue); }
+  .badge-jira { background: #3b0764; color: var(--purple); }
+
+  .exec-summary {
+    background: linear-gradient(135deg, #0c4a6e15 0%, #1e3a5f30 100%);
+    border-left: 4px solid var(--blue);
+    border-radius: 8px; padding: 20px 24px;
+    margin: 20px 0; font-size: 0.95rem;
+  }
+
+  table {
+    width: 100%; border-collapse: collapse; margin: 16px 0;
+    font-size: 0.9rem;
+  }
+  th, td {
+    text-align: left; padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--muted); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; }
+  tr:last-child td { border-bottom: none; }
+
+  pre { background: var(--code-bg); border-radius: 8px; padding: 18px 20px; overflow-x: auto; margin: 12px 0; }
+  code { font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", monospace; font-size: 0.85rem; color: var(--code-text); }
+
+  .kw  { color: var(--kw); }
+  .str { color: var(--str); }
+  .cmt { color: var(--cmt); }
+
+  .timeline { position: relative; padding-left: 24px; }
+  .timeline::before {
+    content: ''; position: absolute; left: 8px; top: 4px; bottom: 4px;
+    width: 2px; background: var(--border);
+  }
+  .timeline-item { position: relative; margin-bottom: 18px; padding-left: 24px; }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -18px; top: 8px;
+    width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+  }
+  .timeline-item.bug::before { background: var(--red); }
+  .timeline-item.fix::before { background: var(--green); }
+  .timeline-item .date { font-size: 0.82rem; color: var(--muted); }
+  .timeline-item .label { font-weight: 600; }
+
+  .evidence-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .evidence-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--code-bg); padding: 8px 14px; border-radius: 6px;
+    font-family: monospace; font-size: 0.85rem;
+  }
+  .evidence-item .etype {
+    font-size: 0.72rem; text-transform: uppercase; padding: 2px 8px;
+    border-radius: 3px; font-weight: 700; min-width: 50px; text-align: center;
+  }
+  .etype-code   { background: #1e3a5f; color: var(--blue); }
+  .etype-commit { background: #064e3b; color: var(--green); }
+  .etype-jira   { background: #3b0764; color: var(--purple); }
+
+  .fork-diagram {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 20px 24px; margin: 16px 0;
+    font-family: monospace; font-size: 0.85rem; line-height: 1.9;
+    white-space: pre; overflow-x: auto;
+  }
+
+  footer {
+    text-align: center; color: var(--muted); font-size: 0.82rem;
+    padding: 40px 0 20px; border-top: 1px solid var(--border); margin-top: 20px;
+  }
+
+  .checklist { list-style: none; }
+  .checklist li { padding: 6px 0; }
+  .checklist li::before { content: '☐ '; color: var(--muted); margin-right: 8px; }
+
+  .conf-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #064e3b; color: var(--green); font-weight: 700;
+    padding: 6px 16px; border-radius: 6px; font-size: 0.95rem;
+  }
+
+  .diff-add { color: #6ee7b7; }
+  .diff-del { color: #fca5a5; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>🔍 BA applicationSettings 未初始化根因分析</h1>
+  <div class="subtitle">q-20260613-ba-setting-init · defect_locate · 场景 3（缺陷责任定位）</div>
+  <div class="meta">
+    <span>📅 2026-06-13</span>
+    <span>🟢 置信度：高</span>
+    <span>🔗 三源印证</span>
+    <span>📦 hdr-delivery-project</span>
+  </div>
+</header>
+
+<!-- Executive Summary -->
+<div class="card">
+  <h2>📌 业务摘要（Executive Summary）</h2>
+  <div class="exec-summary">
+    <p><strong>2026 年 5 月 14 日</strong>，开发团队在执行"Wonder Local 和第三方配送遗留代码清理"（DELI-4475）时，修改了 HDR 配送配置初始化的过滤逻辑——原逻辑自动为所有支持的订单渠道（含 Blue Apron 箱装配送和袋装配送）创建默认配送商配置，清理后仅对 APP 和企业渠道生效，<strong>Blue Apron 的两种配送类型被意外排除</strong>。</p>
+    <br>
+    <p>这意味着从此之后新创建的 HDR（配送点）在 Blue Apron 渠道没有可用的配送商配置，影响 BA 订单的正常履约流程。</p>
+    <br>
+    <p>该回归缺陷在 <strong>2026 年 6 月 11 日</strong> 的日志审查中被发现并修复（DELI-4520），同时通过数据迁移脚本（DELI-4521）对存量受影响数据进行了补填。修复方案简洁可靠：移除硬编码条件，恢复为全部订单渠道覆盖。</p>
+    <br>
+    <p style="color: var(--yellow);"><strong>⚠️ 注意：</strong>修复代码已合入，但修复工单 DELI-4520 目前仍处于 QA 阶段。存量数据的补填依赖 Flyway migration 是否已在目标环境执行。</p>
+  </div>
+</div>
+
+<!-- Root Cause -->
+<div class="card">
+  <h2>🎯 根因定位</h2>
+
+  <h3>受影响代码</h3>
+  <p><code>HDRDeliverySettingBuilder.java:98-100</code> — <code>buildDefaultAllocationSetting()</code> 方法</p>
+
+  <h3>Bug 引入</h3>
+  <pre><span class="cmt">// DELI-4475 (91d86ea28, 2026-05-14) 引入的 Bug</span>
+<span class="kw">public static</span> List&lt;HDRAllocationSetting&gt; buildDefaultAllocationSetting() {
+    <span class="kw">return</span> Arrays.stream(MongoSourceType.values())
+        .filter(s -> s == MongoSourceType.APP <span class="kw">||</span> s == MongoSourceType.CORPORATE)  <span class="cmt">// ← 硬编码！排除了 BA</span>
+        .map(sourceType -> {
+            <span class="kw">var</span> allocationSetting = <span class="kw">new</span> HDRAllocationSetting();
+            allocationSetting.sourceType = sourceType;
+            allocationSetting.providerTypes = DEFAULT_ALLOCATION_PROVIDERS;
+            <span class="kw">return</span> allocationSetting;
+        }).toList();
+}</pre>
+
+  <h3>原始代码（DELI-4475 之前）</h3>
+  <pre><span class="cmt">// 使用 MongoSourceType::isHDRSourceType 方法引用</span>
+<span class="kw">public static</span> List&lt;HDRAllocationSetting&gt; buildDefaultAllocationSetting() {
+    <span class="kw">return</span> Arrays.stream(MongoSourceType.values())
+        .filter(MongoSourceType::isHDRSourceType)  <span class="cmt">// 排除 WONDER_LOCAL，但包含 BA</span>
+        .map(sourceType -> { ... }).toList();
+}</pre>
+
+  <h3>修复后（DELI-4520，当前代码）</h3>
+  <pre><span class="cmt">// DELI-4520 (f19601e91, 2026-06-11) 修复</span>
+<span class="kw">public static</span> List&lt;HDRAllocationSetting&gt; buildDefaultAllocationSetting() {
+    <span class="kw">return</span> Arrays.stream(MongoSourceType.values())
+        .map(HDRDeliverySettingBuilder::buildDefaultAllocationSetting)  <span class="cmt">// 遍历全部 4 个类型</span>
+        .toList();
+}</pre>
+
+  <h3>MongoSourceType — 4 个枚举值</h3>
+  <table>
+    <tr><th>枚举</th><th>MongoDB 值</th><th>含义</th><th>DELI-4475 期间</th></tr>
+    <tr><td><code>APP</code></td><td><code>"APP"</code></td><td>App/Wonder 渠道</td><td><span class="badge badge-fix">✅ 保留</span></td></tr>
+    <tr><td><code>BA_SHIPMENT_BOXED</code></td><td><code>"BA_SHIPMENT_BOXED"</code></td><td>Blue Apron 箱装配送</td><td><span class="badge badge-root">❌ 被排除</span></td></tr>
+    <tr><td><code>BA_SHIPMENT_BAGGED</code></td><td><code>"BA_SHIPMENT_BAGGED"</code></td><td>Blue Apron 袋装配送</td><td><span class="badge badge-root">❌ 被排除</span></td></tr>
+    <tr><td><code>CORPORATE</code></td><td><code>"CORPORATE"</code></td><td>企业渠道</td><td><span class="badge badge-fix">✅ 保留</span></td></tr>
+  </table>
+</div>
+
+<!-- Timeline -->
+<div class="card">
+  <h2>📅 演变时间线</h2>
+  <div class="timeline">
+    <div class="timeline-item">
+      <div class="date">2026-05-14 23:41 EDT</div>
+      <div class="label">🟡 DELI-4475 — Wonder Local and 3P Legacy Cleanup</div>
+      <p style="color: var(--muted); font-size: 0.88rem;">
+        Commit <code>91d86ea28</code> · Author: kentkang<br>
+        Epic 父级: DELI-4476 "Delivery codebase legacy cleanup"<br>
+        将 <code>MongoSourceType::isHDRSourceType</code> 替换为硬编码 <code>APP || CORPORATE</code>。<br>
+        同时从枚举中移除了 <code>THIRD_PARTY</code> 和 <code>WONDER_LOCAL</code>。
+      </p>
+    </div>
+    <div class="timeline-item bug">
+      <div class="date">2026-05-14 ~ 2026-06-11</div>
+      <div class="label">🔴 影响期 — BA allocation setting 缺失</div>
+      <p style="color: var(--muted); font-size: 0.88rem;">
+        所有新创建的 HDR 的 <code>allocation_settings</code> 字段缺少 <code>BA_SHIPMENT_BOXED</code> 和 <code>BA_SHIPMENT_BAGGED</code> 条目。<br>
+        BA 配送订单无法找到默认配送商配置。
+      </p>
+    </div>
+    <div class="timeline-item fix">
+      <div class="date">2026-06-11 22:59 EDT</div>
+      <div class="label">🟢 DELI-4520 — Fixed BA allocation setting empty</div>
+      <p style="color: var(--muted); font-size: 0.88rem;">
+        Commit <code>f19601e91</code> · Author: kentkang<br>
+        父级: DELI-4510 "Log Review" → 祖级: DELI-3474<br>
+        移除硬编码 filter，改为遍历全部 <code>MongoSourceType.values()</code>。<br>
+        新增回归测试 <code>buildDefaultAllocationSettingIncludesAllSourceTypesIncludingBA</code>。<br>
+        <span style="color: var(--yellow);">⚠️ 工单状态: In QA（尚未标记完成）</span>
+      </p>
+    </div>
+    <div class="timeline-item fix">
+      <div class="date">2026-06-11</div>
+      <div class="label">🟢 DELI-4521 — Flyway migration 存量数据回填</div>
+      <p style="color: var(--muted); font-size: 0.88rem;">
+        Commit <code>dc1ee5ce7</code><br>
+        <code>HDRDeliverySettingScript.backfillBAAllocationSetting()</code><br>
+        遍历全部 HDR，补填缺失的 BA allocation setting 条目。
+      </p>
+    </div>
+  </div>
+
+  <h3>因果链</h3>
+  <div class="fork-diagram">DELI-3474 (BA 相关需求)
+  └─ DELI-4476 (Epic: Delivery codebase legacy cleanup)
+       └─ <span style="color:var(--red);">DELI-4475</span> (WL/3P 清理 ── <span style="color:var(--red);">引入 Bug: 硬编码 APP||CORPORATE 排除 BA</span>)
+            └─ DELI-4510 (Log Review ── <span style="color:var(--yellow);">发现 BA allocation setting 为空</span>)
+                 └─ <span style="color:var(--green);">DELI-4520</span> (修复: 移除 filter，恢复全量覆盖)
+                      └─ <span style="color:var(--green);">DELI-4521</span> (Flyway migration: 存量数据回填)</div>
+</div>
+
+<!-- Kodo Change Fork -->
+<div class="card">
+  <h2>🔀 代码分叉演进（buildDefaultAllocationSetting）</h2>
+  <div class="fork-diagram">MongoSourceType 枚举当时值              buildDefaultAllocationSetting() 行为
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<span style="color:var(--muted);">DELI-4475 之前:</span>
+  APP ✓                              遍历 MongoSourceType.values()
+  BA_SHIPMENT_BOXED ✓                 ──filter──▶ .filter(MongoSourceType::isHDRSourceType)
+  BA_SHIPMENT_BAGGED ✓                            排除 WONDER_LOCAL
+  THIRD_PARTY ✓                                   <span style="color:var(--green);">BA ✓  APP ✓  CORPORATE ✓  3P ✓</span>
+  WONDER_LOCAL ✓
+  CORPORATE ✓
+
+<span style="color:var(--red);">DELI-4475 (Bug 引入):</span>
+  APP ✓                              遍历 MongoSourceType.values()
+  BA_SHIPMENT_BOXED ✓                 ──filter──▶ .filter(s -> s==APP || s==CORPORATE)
+  BA_SHIPMENT_BAGGED ✓                            <span style="color:var(--red);">只保留 APP 和 CORPORATE</span>
+  THIRD_PARTY ✗ (已从枚举删除)                    <span style="color:var(--red);">BA ✗  BA ✗  3P ✗  WL ✗</span>
+  WONDER_LOCAL ✗ (已从枚举删除)
+  CORPORATE ✓
+
+<span style="color:var(--green);">DELI-4520 (修复，当前):</span>
+  APP ✓                              遍历 MongoSourceType.values()
+  BA_SHIPMENT_BOXED ✓                 ──map──▶ 无 filter，全部 4 个类型都创建
+  BA_SHIPMENT_BAGGED ✓                         <span style="color:var(--green);">BA ✓  BA ✓  APP ✓  CORPORATE ✓</span>
+  CORPORATE ✓</div>
+</div>
+
+<!-- Confidence & Verification -->
+<div class="card">
+  <h2>✅ 证据校验 &amp; 置信度</h2>
+  <div style="margin-bottom: 18px;">
+    <span class="conf-badge">🟢 置信度：高</span>
+    <span style="margin-left: 12px; color: var(--muted);">三源齐备且互相印证</span>
+  </div>
+
+  <h3>结论清单</h3>
+  <table>
+    <tr>
+      <th>#</th><th>结论</th><th>维度</th><th>出处</th><th>状态</th>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>DELI-4475 将 filter 改为硬编码 APP||CORPORATE，排除 BA</td>
+      <td>root_cause</td>
+      <td>code + commit + jira</td>
+      <td><span class="badge badge-high">✅ 印证</span></td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>DELI-4520 移除 filter，恢复全量覆盖</td>
+      <td>current_state</td>
+      <td>code + commit + jira</td>
+      <td><span class="badge badge-high">✅ 印证</span></td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>存量数据需 DELI-4521 Flyway migration 回填</td>
+      <td>current_state</td>
+      <td>code + commit</td>
+      <td><span class="badge badge-jira">⚠️ 待确认</span></td>
+    </tr>
+  </table>
+
+  <h3>三源覆盖</h3>
+  <table>
+    <tr><th>来源</th><th>状态</th><th>关键证据</th></tr>
+    <tr><td>📝 Code</td><td>✅</td><td>HDRDeliverySettingBuilder.java:98-100 · MongoSourceType.java:8-17 · HDRAllocationSetting.java:15-28</td></tr>
+    <tr><td>📦 Git</td><td>✅</td><td>91d86ea28 (引入) · f19601e91 (修复) · dc1ee5ce7 (回填)</td></tr>
+    <tr><td>🎫 Jira</td><td>✅</td><td>DELI-4475 (Done) · DELI-4520 (In QA) · 因果链: DELI-4476→DELI-4475→DELI-4510→DELI-4520</td></tr>
+  </table>
+</div>
+
+<!-- Evidence Index -->
+<div class="card">
+  <h2>📎 完整证据索引</h2>
+  <div class="evidence-grid">
+    <div class="evidence-item">
+      <span class="etype etype-code">code</span>
+      <span>HDRDeliverySettingBuilder.java:98-100 — buildDefaultAllocationSetting() 初始化逻辑</span>
+    </div>
+    <div class="evidence-item">
+      <span class="etype etype-code">code</span>
+      <span>MongoSourceType.java:8-17 — 枚举定义 (APP/BA_SHIPMENT_BOXED/BA_SHIPMENT_BAGGED/CORPORATE)</span>
+    </div>
+    <div class="evidence-item">
+      <span class="etype etype-code">code</span>
+      <span>HDRAllocationSetting.java:15-28 — allocation setting 领域类</span>
+    </div>
+    <div class="evidence-item">
+      <span class="etype etype-code">code</span>
+      <span>HDRSnapshotMessageHandler.java:81-103 — 初始化 Kafka 入口</span>
+    </div>
+    <div class="evidence-item">
+      <span class="etype etype-code">code</span>
+      <span>HDRDeliverySettingBuilderTest.java:41-48 — 回归测试 (含BA断言)</span>
+    </div>
+    <div class="evidence-item">
+      <span class="etype etype-commit">commit</span>
+      <span>hdr-delivery-project@91d86ea28 — DELI-4475: 硬编码 filter 引入</span>
+    </div>
+    <div class="evidence-item">
+      <span class="etype etype-commit">commit</span>
+      <span>hdr-delivery-project@f19601e91 — DELI-4520: 移除 filter 修复</span>
+    </div>
+    <div class="evidence-item">
+      <span class="etype etype-commit">commit</span>
+      <span>hdr-delivery-project@dc1ee5ce7 — DELI-4521: Flyway migration 回填</span>
+    </div>
+    <div class="evidence-item">
+      <span class="etype etype-jira">jira</span>
+      <span>DELI-4475 — Wonder Local and 3P Legacy Cleanup (Story, Done, 2026-05-28)</span>
+    </div>
+    <div class="evidence-item">
+      <span class="etype etype-jira">jira</span>
+      <span>DELI-4520 — Fixed BA allocation setting empty (Sub-task, In QA)</span>
+    </div>
+  </div>
+</div>
+
+<!-- Verification Checklist -->
+<div class="card">
+  <h2>📋 环境验证清单</h2>
+  <ul class="checklist">
+    <li>确认 <code>HDRDeliverySettingBuilder.buildDefaultAllocationSetting()</code> 不含硬编码 filter</li>
+    <li>确认 <code>buildDefaultAllocationSettingIncludesAllSourceTypesIncludingBA</code> 测试通过</li>
+    <li>确认 DELI-4521 Flyway migration <code>backfillBAAllocationSetting()</code> 已在目标环境执行</li>
+    <li>抽查 MongoDB <code>hdr_delivery_settings</code> 集合中 HDR 的 <code>allocation_settings</code> 包含 <code>BA_SHIPMENT_BOXED</code> 和 <code>BA_SHIPMENT_BAGGED</code> 条目</li>
+    <li>确认新增 HDR 的 allocation_settings 自动包含 BA 类型</li>
+  </ul>
+</div>
+
+<footer>
+  🤖 Generated with dm-seek (马冬梅计划) · queryId: q-20260613-ba-setting-init · 2026-06-13<br>
+  溯源链路: kb-keeper → code-analyst → repo-tracer → jira-tracer → evidence-verifier<br>
+  置信度: 高 · 轮次: 0 · 三源印证
+</footer>
+
+</div>
+</body>
+</html>
