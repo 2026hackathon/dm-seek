@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dm-seek-develop-team 团队组成与开发配合回顾</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --orange: #d2991d;
+    --purple: #a371f7;
+    --pink: #f778ba;
+    --red: #f85149;
+    --blue-bg: rgba(56,139,253,0.1);
+    --green-bg: rgba(63,185,80,0.1);
+    --purple-bg: rgba(163,113,247,0.1);
+    --pink-bg: rgba(247,120,186,0.1);
+    --orange-bg: rgba(210,153,29,0.1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px;
+  }
+  h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 8px; }
+  h1 .sub { font-size: 0.5em; color: var(--text-muted); font-weight: normal; display: block; margin-top: 4px; }
+  h2 { font-size: 1.4em; margin: 48px 0 20px; padding-left: 12px; border-left: 3px solid var(--accent); }
+  h3 { font-size: 1.1em; margin: 32px 0 12px; color: var(--accent); }
+  p { margin: 12px 0; }
+  ul, ol { margin: 12px 0 12px 24px; }
+  li { margin: 6px 0; }
+  .meta { color: var(--text-muted); font-size: 0.9em; margin-top: 4px; }
+
+  /* 卡片网格 */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 20px 0; }
+  .card-grid.two-col { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 768px) { .card-grid.two-col { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .card h4 { font-size: 1em; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .card .role-tag {
+    font-size: 0.75em;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .role-tag.lead { background: var(--blue-bg); color: var(--accent); }
+  .role-tag.design { background: var(--green-bg); color: var(--green); }
+  .role-tag.impl { background: var(--orange-bg); color: var(--orange); }
+  .role-tag.qa { background: var(--purple-bg); color: var(--purple); }
+  .role-tag.review { background: var(--pink-bg); color: var(--pink); }
+  .card .desc { font-size: 0.9em; color: var(--text-muted); }
+  .card .mcp { font-size: 0.8em; margin-top: 8px; padding: 4px 8px; background: var(--blue-bg); border-radius: 4px; color: var(--accent); }
+
+  /* 流程图 */
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 20px 0;
+    font-size: 0.85em;
+  }
+  .flow .node {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .flow .node.coordinator { border-color: var(--accent); }
+  .flow .node.source { border-color: var(--green); }
+  .flow .node.process { border-color: var(--orange); }
+  .flow .arrow { color: var(--text-muted); font-size: 1.2em; }
+
+  /* 时间线 */
+  .timeline { position: relative; margin: 24px 0; padding-left: 24px; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+  .timeline .phase { margin-bottom: 28px; position: relative; }
+  .timeline .phase::before {
+    content: '';
+    position: absolute;
+    left: -20px;
+    top: 6px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+  }
+  .timeline .phase h4 { font-size: 1em; margin-bottom: 4px; }
+  .timeline .phase .date { font-size: 0.8em; color: var(--text-muted); margin-bottom: 6px; }
+  .timeline .phase ul { font-size: 0.9em; color: var(--text-muted); }
+
+  /* 架构图 */
+  .arch-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+    text-align: center;
+  }
+  .arch-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin: 10px 0;
+    flex-wrap: wrap;
+  }
+  .arch-box {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 0.85em;
+    background: var(--bg);
+    min-width: 100px;
+  }
+  .arch-box.user { border-color: var(--accent); color: var(--accent); }
+  .arch-box.lead { border-color: var(--accent); }
+  .arch-box.member { border-color: var(--text-muted); }
+  .arch-box.product { border-color: var(--green); }
+  .arch-arrow { color: var(--text-muted); font-size: 0.9em; }
+  .arch-label { font-size: 0.75em; color: var(--text-muted); margin: 6px 0; }
+
+  /* 协作模型 */
+  .collab-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+  }
+  .collab-box .row { display: flex; align-items: flex-start; gap: 16px; margin: 16px 0; }
+  .collab-box .row .num {
+    flex-shrink: 0;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--blue-bg);
+    color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.85em;
+  }
+  .collab-box .row h4 { margin: 0 0 4px; font-size: 0.95em; }
+  .collab-box .row p { margin: 0; font-size: 0.85em; color: var(--text-muted); }
+
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.9em; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-muted); font-weight: 600; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.5px; }
+  td code { background: var(--blue-bg); color: var(--accent); padding: 1px 6px; border-radius: 3px; font-size: 0.9em; }
+
+  /* 总结 */
+  .summary {
+    background: linear-gradient(135deg, var(--blue-bg), var(--purple-bg));
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 32px 0;
+  }
+  .summary p { margin: 0; font-size: 1.05em; }
+
+  .footer {
+    margin-top: 48px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.8em;
+    display: flex; justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<h1>
+  dm-seek-develop-team
+  <span class="sub">团队组成与开发配合回顾 · 马冬梅计划 Builder Team</span>
+</h1>
+
+<p class="meta">生成日期：2026-06-13 · 项目交付日期：2026-06-12 · 当前阶段：优化维护期</p>
+
+<!-- ====== 两层团队 ====== -->
+<h2>一、团队组成：两层结构</h2>
+
+<h3>1.1 Builder Team（6 人，开发 dm-seek 配置包的团队）</h3>
+
+<div class="card-grid">
+  <div class="card">
+    <h4><span class="role-tag lead">协调</span> tech-lead</h4>
+    <p class="desc">技术协调者。任务拆解与分配、进度跟踪、协调成员间协作、向用户汇报里程碑。是整个 builder team 的调度中枢。</p>
+  </div>
+  <div class="card">
+    <h4><span class="role-tag design">设计</span> architect</h4>
+    <p class="desc">架构师。PRD 撰写与版本管理、架构设计决策、设计文档之间的一致性保证、对设计变更做影响分析和收敛。</p>
+  </div>
+  <div class="card">
+    <h4><span class="role-tag impl">实现</span> core-dev</h4>
+    <p class="desc">核心开发者。7 个 agent 定义的编写与修改、运行时规则（runtime-spec）落地。工作对象：<code>.claude/agents/*.md</code> + <code>.claude/rules/</code>。</p>
+  </div>
+  <div class="card">
+    <h4><span class="role-tag impl">实现</span> tools-dev</h4>
+    <p class="desc">工具开发者。4 个 skill 实现、<code>.mcp.json</code> 配置模板、配置占位模板维护、引导流程（setup-guide）开发。</p>
+  </div>
+  <div class="card">
+    <h4><span class="role-tag qa">质量</span> qa-engineer</h4>
+    <p class="desc">质量工程师。测试计划制定、端到端验证执行、静态核查、问题追踪与回归确认。</p>
+  </div>
+  <div class="card">
+    <h4><span class="role-tag review">把关</span> critic</h4>
+    <p class="desc">评审者。对抗验证（adversarial review）、设计/实现产物审查、边界违规检测、generator/critic 循环的驱动方。≤2 轮辩论，不收敛时升级用户裁决。</p>
+  </div>
+</div>
+
+<h3>1.2 产品 Team（dm-seek 配置包定义的 7 个业务 Agent）</h3>
+<p style="color: var(--text-muted);">这 7 个 agent 是 builder team 开发出来的<strong>产物</strong>——一套可导入、开箱即用的 Claude Code agent team 配置包。用户导入后直接使用。</p>
+
+<div class="card-grid two-col">
+  <div class="card">
+    <h4>🏗️ dongmei-ma</h4>
+    <p class="desc">协调者。解析用户自然语言疑问、拆解子任务并派发、驱动校验返工循环、默认以中文交付报告。不直连任何信息源。</p>
+    <div class="mcp">MCP：无（不直连信息源）</div>
+  </div>
+  <div class="card">
+    <h4>📚 kb-keeper</h4>
+    <p class="desc">唯一 KB 读写口。经 Obsidian CLI + Knowlery 提供线索、沉淀结论。不读源码，写操作唯一收口。</p>
+    <div class="mcp">MCP：无（KB 经 obsidian CLI / Knowlery）</div>
+  </div>
+  <div class="card">
+    <h4>🔍 code-analyst</h4>
+    <p class="desc">据 KB 线索定位并解读 core-ng 代码。KB 未命中时源码兜底。态B 可经 Bash 直读本地 git 历史。远端代码经 repo-tracer 获取。</p>
+    <div class="mcp">MCP：无（本地直读 + 远端经 repo-tracer）</div>
+  </div>
+  <div class="card">
+    <h4>📜 repo-tracer</h4>
+    <p class="desc">Git/GitHub 网关。统一收口提交时间线、从 commit subject 抽取 Jira 工单号。管理 N 个按仓划分的 GitHub MCP 实例。</p>
+    <div class="mcp">MCP：mcp__github-*（全部 GitHub 实例，远端独占）</div>
+  </div>
+  <div class="card">
+    <h4>🎫 jira-tracer</h4>
+    <p class="desc">经 Jira MCP 取工单业务原因与因果脉络。只读权限（仅 <code>jira_get</code>），自己拼 REST v3 路径。</p>
+    <div class="mcp">MCP：mcp__jira__jira_get（只读）</div>
+  </div>
+  <div class="card">
+    <h4>🧠 synthesizer</h4>
+    <p class="desc">综合 code + git + jira 三源 → 双层结论（executiveSummary + 完整推导）。分析方法沉淀为可复用 skill，覆盖 9 类场景。</p>
+    <div class="mcp">MCP：无（仅消费上游三源产物）</div>
+  </div>
+  <div class="card">
+    <h4>✅ evidence-verifier</h4>
+    <p class="desc">校验每条结论是否挂出处 + 三级置信度（高/中/低）+ 边界违规检测。不足时触发 ≤2 轮发散返工，仍不足则降级交付。</p>
+    <div class="mcp">MCP：无（仅消费上游全部产物）</div>
+  </div>
+</div>
+
+<!-- ====== 产品溯源流程 ====== -->
+<h2>二、产品溯源链路</h2>
+
+<div class="arch-diagram">
+  <div class="arch-row">
+    <div class="arch-box user">👤 用户自然语言疑问</div>
+  </div>
+  <div class="arch-arrow">▼</div>
+  <div class="arch-row">
+    <div class="arch-box lead">dongmei-ma<br><small>解析 · 拆解 · 派发</small></div>
+  </div>
+  <div class="arch-arrow">▼</div>
+  <div class="arch-row">
+    <div class="arch-box product">kb-keeper<br><small>KB 线索</small></div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-box product">code-analyst<br><small>代码定位+解读</small></div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-box product">repo-tracer<br><small>时间线+抽工单号</small></div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-box product">jira-tracer<br><small>业务原因</small></div>
+  </div>
+  <div class="arch-arrow">▼</div>
+  <div class="arch-row">
+    <div class="arch-box product">synthesizer<br><small>三源综合 → 双层结论</small></div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-box product">evidence-verifier<br><small>出处校验+置信度</small></div>
+  </div>
+  <div class="arch-arrow">▼</div>
+  <div class="arch-row">
+    <div class="arch-box" style="border-color: var(--green);">✅ 充分 → 交付 + KB 沉淀</div>
+    <span style="color: var(--text-muted); margin: 0 12px;">|</span>
+    <div class="arch-box" style="border-color: var(--orange);">🔄 不足 → ≤2 轮发散返工 → 降级交付</div>
+  </div>
+</div>
+
+<!-- ====== 配合模式 ====== -->
+<h2>三、我们如何配合</h2>
+
+<div class="arch-diagram">
+  <div class="arch-row">
+    <div class="arch-box user">👤 你（决策者）</div>
+  </div>
+  <div class="arch-arrow">↕ 里程碑汇报 / 方向确认 / 裁决</div>
+  <div class="arch-row">
+    <div class="arch-box lead">tech-lead（协调中枢）</div>
+  </div>
+  <div class="arch-arrow">↕ 任务拆解 + 共享任务列表 + 消息驱动</div>
+  <div class="arch-row">
+    <div class="arch-box member">architect</div>
+    <div class="arch-box member">core-dev</div>
+    <div class="arch-box member">tools-dev</div>
+    <div class="arch-box member">qa-engineer</div>
+    <div class="arch-box member">critic</div>
+  </div>
+  <div class="arch-arrow">↕ generator/critic 审查循环</div>
+  <div class="arch-row">
+    <div class="arch-box product" style="font-size:0.8em;">📦 产物：D:\dev_repository\CT-hackathon\dm-seek\</div>
+  </div>
+</div>
+
+<h3>3.1 四大配合机制</h3>
+
+<div class="collab-box">
+  <div class="row">
+    <div class="num">1</div>
+    <div>
+      <h4>共享任务列表驱动</h4>
+      <p>所有工作通过 TaskCreate / TaskUpdate 透明协作。tech-lead 拆解大任务为子任务，设置 blockedBy 依赖链（设计先行 → 实现 → 审查），成员各自认领执行。你随时可看到进度和阻塞项。</p>
+    </div>
+  </div>
+  <div class="row">
+    <div class="num">2</div>
+    <div>
+      <h4>分层决策</h4>
+      <p>实现细节：成员自主。设计选择：tech-lead 协调 + critic 审查。架构/方向级：architect 提案 → 你确认 → 执行。关键风险：critic 如实暴露，不包装。</p>
+    </div>
+  </div>
+  <div class="row">
+    <div class="num">3</div>
+    <div>
+      <h4>Generator / Critic 循环</h4>
+      <p>成员产出 → critic 审查找问题 → 打回修改 → 再审查。最多 2 轮辩论，僵持不下时升级给你裁决。C 级/文档微调攒清单批处理，不打断 owner 关键路径。</p>
+    </div>
+  </div>
+  <div class="row">
+    <div class="num">4</div>
+    <div>
+      <h4>以文件为真相源</h4>
+      <p>不以任务状态 flag 或口头"已完成"为准，以产物文件的 mtime/size/内容核进度。critic 亲自 grep/Read 核实，不采信二手声称。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ====== 开发时间线 ====== -->
+<h2>四、开发历程</h2>
+
+<div class="timeline">
+  <div class="phase">
+    <h4>Phase 1-2 · 团队创建与知识库配置</h4>
+    <div class="date">2026-06-11</div>
+    <ul>
+      <li>6 人 builder team 创建完成，所有成员生成并确认就绪</li>
+      <li>Obsidian/Knowlery 知识库配置：domain-context 更新、project-context + team-collaboration 规则添加、SCHEMA 注册</li>
+      <li>3 个知识页面建立并交叉链接（entities/agent-team-builder-project、concepts/agent-team-architecture、concepts/meta-agent-system）</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <h4>Phase 3 设计期 · PRD 迭代 + 关键裁决</h4>
+    <div class="date">2026-06-12 上午</div>
+    <ul>
+      <li>architect 撰写 PRD v0.1，与你多轮对齐后迭代至 v0.4.3</li>
+      <li><strong>关键裁决（你拍板）</strong>：运行形态选 teammate（非 subagent 委派）、7 人角色名单定稿、默认中文输出 + 英文按需、多仓支持方案（一个 GitHub MCP 实例一个仓）、凭据全部 ${VAR} 环境变量化</li>
+      <li>设计六件套 T1-T6 并行推进：I/O 契约、core-ng 识别规则、双源切换路由、综合校验方法、MCP 配置形态、Jira 工具映射</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <h4>T7 Critic 审查 · 有条件通过 → 最终通过</h4>
+    <div class="date">2026-06-12 中午</div>
+    <ul>
+      <li>critic 全面审查设计产物：4 个 convergence items + Jira schema 修正</li>
+      <li>用户确认 PRD v0.4 后放行实现阶段</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <h4>实现期 · 并行开发</h4>
+    <div class="date">2026-06-12 下午–晚上</div>
+    <ul>
+      <li>T8：团队骨架搭建（dongmei-ma initialPrompt + TeamCreate 自动启动）</li>
+      <li>T9-T15 并行：core-dev 写 7 个 agent 定义，tools-dev 写 4 个 skill + MCP 配置模板</li>
+      <li>大文件产出时 core-dev/qa 零输出 → 改为后台 isolated background specialist 执行</li>
+      <li>T16：端到端验证 + critic 全量终审</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <h4>收尾交付 · 17/17 闭合</h4>
+    <div class="date">2026-06-12 深夜</div>
+    <ul>
+      <li>全部 17 个任务完成，文件级核实通过</li>
+      <li>用户确认交付，写入记忆，优雅关闭团队</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <h4>优化维护期（当前）</h4>
+    <div class="date">2026-06-13</div>
+    <ul>
+      <li>5 个 commit：文档结构重组、协作流程优化（A/B/C 三项）、只读政策规范、分片通信机制、渐进式加载 I/O 契约</li>
+      <li>用户真实仓库运行查询，<code>reports/</code> 下积累 9 份实际运行报告</li>
+      <li>团队重新唤起，处于就绪状态</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ====== 交付产物 ====== -->
+<h2>五、交付产物总览</h2>
+
+<table>
+  <tr><th>类别</th><th>路径</th><th>数量</th><th>说明</th></tr>
+  <tr>
+    <td>Agent 定义</td>
+    <td><code>.claude/agents/</code></td>
+    <td>7 个</td>
+    <td>dongmei-ma / kb-keeper / code-analyst / repo-tracer / jira-tracer / synthesizer / evidence-verifier</td>
+  </tr>
+  <tr>
+    <td>Skills</td>
+    <td><code>.claude/skills/</code></td>
+    <td>4 个</td>
+    <td>coreng-recognition / synthesis-core / kb-init / setup-guide</td>
+  </tr>
+  <tr>
+    <td>运行时规则</td>
+    <td><code>.claude/rules/</code></td>
+    <td>11 份</td>
+    <td>runtime-spec（11 节）+ 8 份设计定稿 + 2 个配置占位模板</td>
+  </tr>
+  <tr>
+    <td>MCP 配置</td>
+    <td><code>.mcp.json</code></td>
+    <td>1 份</td>
+    <td>共享 MCP 配置（GitHub 多仓 + Jira）</td>
+  </tr>
+  <tr>
+    <td>说明文档</td>
+    <td><code>docs/</code></td>
+    <td>5 份</td>
+    <td>PRD / 技术方案 / 用户手册 / 实现总结 / 验证报告</td>
+  </tr>
+  <tr>
+    <td>运行报告</td>
+    <td><code>reports/</code></td>
+    <td>9 份</td>
+    <td>真实仓库查询产出的 HTML 分析报告</td>
+  </tr>
+</table>
+
+<!-- ====== 总结 ====== -->
+<div class="summary">
+  <p><strong>一句话总结：</strong>你定方向、tech-lead 拆任务、architect 做设计、core-dev + tools-dev 并行实现、qa 验证、critic 把关——六人围绕共享任务列表 + 消息驱动循环，产出了 <code>D:\dev_repository\CT-hackathon\dm-seek\</code> 下完整的 7-agent 配置包。引擎 = Claude Code 原生 agent team，零外部依赖，开箱即用。</p>
+</div>
+
+<div class="footer">
+  <span>dm-seek（马冬梅计划）· Builder Team 回顾报告</span>
+  <span>2026-06-13</span>
+</div>
+
+</body>
+</html>
