@@ -6,19 +6,23 @@
 //   - 核心 MCP（GitHub 多仓 + Jira）都写在共享 .mcp.json（会话级，全 team 可见）。
 //   - 不走 agent frontmatter 内联——teammate 形态下 frontmatter 的 mcpServers 被忽略。
 //   - 独占靠各 agent 的 tools 白名单（见 ./agent-tools-allowlist.placeholder.md）。
+//   - 官方 Plugin 优先：认证推荐走官方 Claude Code plugin（GitHub / Atlassian），
+//     通过 /plugin install + /mcp OAuth 授权，token 由 Claude Code keychain 管理。
+//     官方 plugin 自行注册其 MCP server（不落此 .mcp.json）。
+//     本文件中的 PAT 条目仅作 CI/headless fallback。
 //   - 凭据一律 ${DMSEEK_*}，配置零明文。
 {
   "mcpServers": {
     // --- GitHub：每仓一条 github-<repoSlug>（区分仓库靠各自 token）---
-    "github-hdr-delivery-project": {
+    "dm-github-hdr-delivery-project": {
       "type": "http",
       "url": "${DMSEEK_GH_MCP_URL:-https://api.githubcopilot.com/mcp/}",
       "headers": {
         "Authorization": "Bearer ${DMSEEK_GH_TOKEN_HDR_DELIVERY_PROJECT}"
       }
     },
-    // 第二个仓库（占位，按命名约定 §2.1 推导）：
-    // "github-<repoSlug-2>": {
+    // 第二个仓库（占位，按命名约定 §2.1 推导，server 名 dm-github-<repoSlug>）：
+    // "dm-github-<repoSlug-2>": {
     //   "type": "http",
     //   "url": "${DMSEEK_GH_MCP_URL:-https://api.githubcopilot.com/mcp/}",
     //   "headers": { "Authorization": "Bearer ${DMSEEK_GH_TOKEN_<REPO_SLUG_2_UPPER>}" }

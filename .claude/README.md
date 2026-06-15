@@ -17,7 +17,7 @@
 
 - 共享 `.mcp.json` 里的 MCP server 在**会话层面对全 team 可见**。
 - 「GitHub MCP 独占 `repo-tracer`、Jira MCP 独占 `jira-tracer`、其他 agent 不直连信息源」靠**各 agent 定义的 `tools` 白名单**实现——只有被授予对应 `mcp__` 工具的 agent 能调用：
-  - 仅 `repo-tracer` 的 `tools` 含 `mcp__github-<repoSlug>__*`；
+  - 仅 `repo-tracer` 的 `tools` 含 `mcp__dm-github-<repoSlug>__*`；
   - 仅 `jira-tracer` 含 `mcp__jira__jira_get`（**只读**，不授予写工单的工具）；
   - 仅 `kb-keeper` 含 obsidian / Knowlery（KB 读写）路径；
   - `dongmei-ma` 及 `code-analyst` / `synthesizer` / `evidence-verifier` 的 `tools` **不含**任何源类 `mcp__` 工具。
