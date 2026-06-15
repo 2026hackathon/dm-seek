@@ -738,8 +738,7 @@
 
   <h3>8.3 启动团队</h3>
   <div class="flow-diagram light">
-  进入claude code后:
-    唤起dm-seek agent team
+    claude "唤起dm-seek-agent-team"
   </div>
   <p>首次启动时 dongmei-ma 自动执行一次性初始化：</p>
   <ol class="step-list">
@@ -831,7 +830,7 @@
       <thead><tr><th style="width:28%;">特性</th><th>说明</th></tr></thead>
       <tbody>
         <tr><td><strong>运行形态</strong></td><td>Claude Code agent team（teammate），7 个平级 Agent</td></tr>
-        <tr><td><strong>启动方式</strong></td><td><code>claude --agent dongmei-ma</code>（自动建团 + 召唤）</td></tr>
+        <tr><td><strong>启动方式</strong></td><td><code>claude "唤起dm-seek-agent-team"a</code>（自动建团 + 召唤）</td></tr>
         <tr><td><strong>通信方式</strong></td><td>SendMessage + 共享任务列表（非父子委派）</td></tr>
         <tr><td><strong>代码识别</strong></td><td>core-ng 框架优先（REST / Kafka 入口、调用链、@Inject / Module 模式），可扩展</td></tr>
         <tr><td><strong>多仓支持</strong></td><td>每仓库对应独立 GitHub MCP 实例 + 独立 Token；单次查询可横跨多仓</td></tr>
