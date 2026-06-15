@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Typo & Grammar Audit Report — wonder-consumer-project</title>
+<style>
+  :root { --bg: #f8f9fa; --card: #fff; --text: #1a1a2e; --muted: #6b7280; --border: #e5e7eb; --red: #dc2626; --amber: #d97706; --green: #16a34a; --blue: #2563eb; --code-bg: #f1f5f9; --radius: 8px; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background:var(--bg); color:var(--text); line-height:1.6; padding:24px; max-width:1200px; margin:0 auto; }
+  header { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); color:#fff; padding:28px 32px; border-radius:12px; margin-bottom:24px; }
+  header h1 { font-size:1.5rem; margin-bottom:4px; }
+  header .sub { opacity:0.8; font-size:0.88rem; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:20px 24px; margin-bottom:18px; }
+  .card h2 { font-size:1.1rem; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.74rem; font-weight:600; }
+  .badge-red { background:#fef2f2; color:#b91c1c; } .badge-amber { background:#fffbeb; color:#92400e; } .badge-blue { background:#eff6ff; color:#1d4ed8; } .badge-green { background:#f0fdf4; color:#15803d; }
+  table { width:100%; border-collapse:collapse; font-size:0.85rem; margin:8px 0; }
+  th, td { padding:8px 10px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { background:var(--code-bg); font-weight:600; color:#374151; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.03em; }
+  tr:last-child td { border-bottom:none; }
+  code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono","Fira Code",monospace; font-size:0.82em; }
+  .path { color:#7c3aed; }
+  .old { background:#fef2f2; padding:1px 4px; border-radius:3px; }
+  .new { background:#f0fdf4; padding:1px 4px; border-radius:3px; }
+  .summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+  .stat { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; text-align:center; }
+  .stat .num { font-size:1.8rem; font-weight:700; }
+  .stat .label { font-size:0.78rem; color:var(--muted); margin-top:4px; }
+  .stat-red .num { color:var(--red); } .stat-amber .num { color:var(--amber); }
+  footer { text-align:center; color:var(--muted); font-size:0.78rem; margin-top:24px; padding:14px; }
+  @media (max-width:700px) { .summary-grid { grid-template-columns:repeat(2,1fr); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🔍 Typo & Grammar Audit Report</h1>
+  <div class="sub">wonder-consumer-project · backend + frontend · 2026-06-14</div>
+</header>
+
+<div class="summary-grid">
+  <div class="stat"><div class="num" style="color:var(--red)">38</div><div class="label">total findings</div></div>
+  <div class="stat"><div class="num" style="color:var(--amber)">5</div><div class="label">spelling mistakes</div></div>
+  <div class="stat"><div class="num" style="color:#e11d48">23</div><div class="label">grammar issues</div></div>
+  <div class="stat"><div class="num" style="color:var(--blue)">10</div><div class="label">double spaces</div></div>
+</div>
+
+<!-- ===== SPELLING ===== -->
+<div class="card">
+  <h2>1️⃣ Spelling Mistakes <span class="badge badge-red">5 found</span></h2>
+
+  <table>
+    <thead>
+      <tr><th style="width:36px">#</th><th>File</th><th>Current</th><th>Fix</th><th style="width:72px">Type</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td><code class="path">restaurant-service-v2/.../BOBrandBundleItemService.java:191</code></td>
+        <td><span class="old">anther</span> brand bundle item</td>
+        <td><span class="new">another</span> brand bundle item</td>
+        <td><span class="badge badge-red">spelling</span></td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td><code class="path">restaurant-service-v2/.../BOBrandMenuItemService.java:193</code></td>
+        <td><span class="old">anther</span> brand bundle item</td>
+        <td><span class="new">another</span> brand bundle item</td>
+        <td><span class="badge badge-red">spelling</span></td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td><code class="path">restaurant-service-v2/.../ErrorCodes.java:7</code></td>
+        <td><code>DUPLICATED_NAME</code></td>
+        <td><code>DUPLICATE_NAME</code></td>
+        <td><span class="badge badge-amber">code name</span></td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td><code class="path">merchandising-site-frontend/.../module.ts:25</code></td>
+        <td><code>"DUPLICATED_NAME"</code> (3 files)</td>
+        <td><code>"DUPLICATE_NAME"</code></td>
+        <td><span class="badge badge-amber">code name</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="font-size:0.82rem;margin-top:8px;color:var(--muted);padding:8px 10px;background:#fffbeb;border-radius:6px;">
+    ⚠️ #3–4: <code>DUPLICATED_NAME</code> is used as an <strong>error code string</strong> across backend (7 call sites) and frontend (3 files). "Duplicated" is not standard English — "Duplicate" is correct. Changing it requires <strong>coordinated backend + frontend release</strong> since the frontend parses this error code string in <code>ERROR_CODE_LIST</code>.
+  </div>
+</div>
+
+<!-- ===== GRAMMAR ===== -->
+<div class="card">
+  <h2>2️⃣ Grammar Issues (User-Facing Strings) <span class="badge badge-red">23 found</span></h2>
+
+  <h3 style="font-size:0.92rem;margin:14px 0 6px;">A. "not find" → "not found" / "cannot find"</h3>
+  <table>
+    <thead><tr><th style="width:36px">#</th><th>File</th><th>Current</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1</td><td><code class="path">CartItemValidator.java:77</code> (×3 files)</td>
+        <td><span class="old">bundle choice not find</span></td>
+        <td><span class="new">bundle choice not found</span></td>
+      </tr>
+      <tr>
+        <td>2</td><td><code class="path">CartItemValidator.java:106</code> (×3 files)</td>
+        <td><span class="old">menu item option not find</span></td>
+        <td><span class="new">menu item option not found</span></td>
+      </tr>
+      <tr>
+        <td>3</td><td><code class="path">BOBundleItemService.java:53</code></td>
+        <td><span class="old">not find bundle item</span></td>
+        <td><span class="new">bundle item not found</span></td>
+      </tr>
+      <tr>
+        <td>4</td><td><code class="path">GiftCardService.java:198</code></td>
+        <td><span class="old">can not found</span> gift card product</td>
+        <td><span class="new">cannot find</span> gift card product</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 style="font-size:0.92rem;margin:14px 0 6px;">B. "can not" → "cannot" (user-facing error messages)</h3>
+  <table>
+    <thead><tr><th style="width:36px">#</th><th>File</th><th>Current</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code class="path">CancelOrderValidator.java:60</code></td><td><span class="old">can not</span> cancel order when food is delivered.</td><td><span class="new">Cannot</span> cancel order when food is delivered.</td></tr>
+      <tr><td>2</td><td><code class="path">CancelOrderValidator.java:81</code></td><td><span class="old">can not</span> fail order for current order status</td><td><span class="new">Cannot</span> fail order for current order status</td></tr>
+      <tr><td>3</td><td><code class="path">BORestaurantBrandService.java:217</code></td><td><span class="old">can not</span> delete a restaurant brand when it was linked</td><td><span class="new">Cannot</span> delete a restaurant brand when it is linked</td></tr>
+      <tr><td>4</td><td><code class="path">BOHDRFeeConfigurationService.java:149</code></td><td><span class="old">can not delete</span></td><td><span class="new">cannot be deleted</span></td></tr>
+      <tr><td>5</td><td><code class="path">BOHDRFeeConfigurationService.java:224</code></td><td><span class="old">can not delete</span></td><td><span class="new">cannot be deleted</span></td></tr>
+      <tr><td>6</td><td><code class="path">BOHDRFeeConfigurationService.java:309</code></td><td><span class="old">can not delete</span></td><td><span class="new">cannot be deleted</span></td></tr>
+      <tr><td>7</td><td><code class="path">BOHDRTipConfigurationService.java:130</code></td><td><span class="old">can not delete</span></td><td><span class="new">cannot be deleted</span></td></tr>
+      <tr><td>8</td><td><code class="path">BOWonderSpotFeeConfigurationService.java:174</code></td><td><span class="old">can not delete</span></td><td><span class="new">cannot be deleted</span></td></tr>
+      <tr><td>9</td><td><code class="path">TaxService.java:190</code></td><td>You <span class="old">can not</span> apply fee tax</td><td>You <span class="new">cannot</span> apply fee tax</td></tr>
+      <tr><td>10</td><td><code class="path">TaxService.java:215</code></td><td><span class="old">can not apply</span> rule</td><td><span class="new">cannot apply</span> rule</td></tr>
+      <tr><td>11</td><td><code class="path">BOChallengeService.java:80</code></td><td><span class="old">can not edit</span> expire</td><td><span class="new">Cannot edit</span> expired</td></tr>
+      <tr><td>12</td><td><code class="path">BOChallengeService.java:214</code></td><td><span class="old">can not update</span> start date</td><td><span class="new">cannot update</span> start date</td></tr>
+      <tr><td>13</td><td><code class="path">BOChallengeService.java:217</code></td><td><span class="old">can not update to before</span></td><td><span class="new">cannot be set to a past date</span></td></tr>
+      <tr><td>14</td><td><code class="path">BOChallengeService.java:223</code></td><td><span class="old">can not update</span> start date</td><td><span class="new">cannot update</span> start date</td></tr>
+      <tr><td>15</td><td><code class="path">BOChallengeService.java:226</code></td><td><span class="old">can not update</span> to today and before</td><td><span class="new">cannot be set to today or earlier</span></td></tr>
+      <tr><td>16</td><td><code class="path">BOOrderService.java:409</code></td><td><span class="old">can not resend</span> email.</td><td><span class="new">Cannot resend</span> email.</td></tr>
+      <tr><td>17</td><td><code class="path">CustomerCancelOrderService.java:308</code></td><td>order <span class="old">can not cancel</span> at this time</td><td>order <span class="new">cannot be cancelled</span> at this time</td></tr>
+      <tr><td>18</td><td><code class="path">HDRCancelOrderService.java:369</code></td><td>order <span class="old">can not cancel</span> at this time</td><td>order <span class="new">cannot be cancelled</span> at this time</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="font-size:0.92rem;margin:14px 0 6px;">C. Broken grammar</h3>
+  <table>
+    <thead><tr><th style="width:36px">#</th><th>File</th><th>Current</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1</td><td><code class="path">CartItemValidator.java:89</code> (×3)</td>
+        <td>bundle item choice <span class="old">can not more than</span></td>
+        <td>bundle item choice <span class="new">cannot exceed</span></td>
+      </tr>
+      <tr>
+        <td>2</td><td><code class="path">CartItemValidator.java:114</code> (×3)</td>
+        <td>menu item options <span class="old">can not more than</span></td>
+        <td>menu item options <span class="new">cannot exceed</span></td>
+      </tr>
+      <tr>
+        <td>3</td><td><code class="path">BundleItemHelper.java:279</code></td>
+        <td>values' number <span class="old">must greater than or equal min</span></td>
+        <td>values' count <span class="new">must be ≥ min choice</span></td>
+      </tr>
+      <tr>
+        <td>4</td><td><code class="path">BundleItemHelper.java:283</code></td>
+        <td>values' number <span class="old">must greater than or equal max</span></td>
+        <td>values' count <span class="new">must be ≤ max choice</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ===== DOUBLE SPACES ===== -->
+<div class="card">
+  <h2>3️⃣ Double Spaces Inside Strings <span class="badge badge-blue">10 found</span></h2>
+
+  <table>
+    <thead><tr><th style="width:36px">#</th><th>File</th><th>Current</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1</td><td><code class="path">CartItemValidator.java:77</code> (×3 files)</td>
+        <td><code>"bundle choice not find<span class="old">&nbsp;&nbsp;</span>,choice id = {}"</code></td>
+        <td><code>"bundle choice not found, choice id = {}"</code></td>
+      </tr>
+      <tr>
+        <td>2</td><td><code class="path">CartItemValidator.java:89</code> (×3 files)</td>
+        <td><code>"bundle item choice can not<span class="old">&nbsp;&nbsp;</span>more than {}"</code></td>
+        <td><code>"bundle item choice cannot exceed {}"</code></td>
+      </tr>
+      <tr>
+        <td>3</td><td><code class="path">FirstPlaceOrderService.java:40</code></td>
+        <td><code>"can not find<span class="old">&nbsp;&nbsp;</span>the question"</code></td>
+        <td><code>"cannot find the question"</code></td>
+      </tr>
+      <tr>
+        <td>4</td><td><code class="path">BOBrandBundleItemService.java:191</code></td>
+        <td><code>"{} is used<span class="old">&nbsp;&nbsp;</span>by anther brand bundle item..."</code></td>
+        <td><code>"{} is used by another brand bundle item..."</code></td>
+      </tr>
+      <tr>
+        <td>5</td><td><code class="path">BOItemPriceWebServiceImpl.java:99</code></td>
+        <td><code>"item number<span class="old">&nbsp;&nbsp;</span>option id<span class="old">&nbsp;&nbsp;</span>option value id<span class="old">&nbsp;&nbsp;</span>not be null"</code></td>
+        <td><code>"item number, option id, option value id must not be null"</code></td>
+      </tr>
+      <tr>
+        <td>6</td><td><code class="path">BOItemPriceWebServiceImpl.java:145</code></td>
+        <td><code>"item number<span class="old">&nbsp;&nbsp;</span>option id<span class="old">&nbsp;&nbsp;</span>option value id<span class="old">&nbsp;&nbsp;</span>not be null"</code></td>
+        <td><code>"item number, option id, option value id must not be null"</code></td>
+      </tr>
+      <tr>
+        <td>7</td><td><code class="path">BundleItemHelper.java:279</code></td>
+        <td><code>"values' number<span class="old">&nbsp;&nbsp;</span>must greater..."</code></td>
+        <td><code>"values' count must be ≥ min choice"</code></td>
+      </tr>
+      <tr>
+        <td>8</td><td><code class="path">BundleItemHelper.java:283</code></td>
+        <td><code>"values' number<span class="old">&nbsp;&nbsp;</span>must greater..."</code></td>
+        <td><code>"values' count must be ≤ max choice"</code></td>
+      </tr>
+      <tr>
+        <td>9</td><td><code class="path">RestaurantBrandBuilder.java:107</code></td>
+        <td><code>"can not find brand<span class="old">&nbsp;&nbsp;</span>id<span class="old">&nbsp;&nbsp;</span>="</code></td>
+        <td><code>"cannot find brand, id = "</code></td>
+      </tr>
+      <tr>
+        <td>10</td><td><code class="path">CustomerPromotionService.java:18-19</code></td>
+        <td><code>"...promotion_id = ?<span class="old">&nbsp;&nbsp;</span>ORDER BY..."</code></td>
+        <td><code>"...promotion_id = ? ORDER BY..."</code></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ===== SUMMARY BY FILE ===== -->
+<div class="card">
+  <h2>4️⃣ Files Affected</h2>
+  <table>
+    <thead><tr><th>File</th><th style="width:60px">Count</th><th>Issues</th></tr></thead>
+    <tbody>
+      <tr><td><code class="path">wonder-cart-service/.../CartItemValidator.java</code></td><td style="text-align:center;font-weight:700;color:var(--red)">3</td><td>"not find" + double spaces + "can not more than"</td></tr>
+      <tr><td><code class="path">wonder-cart-service/.../WebCartItemValidator.java</code></td><td style="text-align:center;font-weight:700;color:var(--red)">3</td><td>same issues (duplicate code)</td></tr>
+      <tr><td><code class="path">wonder-cart-service/.../CartItemValidator.java</code> (wondercart)</td><td style="text-align:center;font-weight:700;color:var(--red)">3</td><td>same issues (3rd copy)</td></tr>
+      <tr><td><code class="path">restaurant-service-v2/.../BOBrandBundleItemService.java</code></td><td style="text-align:center">2</td><td>"anther" + "is used  by"</td></tr>
+      <tr><td><code class="path">restaurant-service-v2/.../BOBrandMenuItemService.java</code></td><td style="text-align:center">1</td><td>"anther"</td></tr>
+      <tr><td><code class="path">restaurant-service-v2/.../BundleItemHelper.java</code></td><td style="text-align:center">2</td><td>double space + broken grammar</td></tr>
+      <tr><td><code class="path">restaurant-service-v2/.../BOItemPriceWebServiceImpl.java</code></td><td style="text-align:center">2</td><td>double spaces ×3 each</td></tr>
+      <tr><td><code class="path">restaurant-service-v2/.../ErrorCodes.java</code></td><td style="text-align:center">2</td><td>DUPLICATED_NAME + CAN_NOT_CLOSE (code names)</td></tr>
+      <tr><td><code class="path">order-service/.../CancelOrderValidator.java</code></td><td style="text-align:center">3</td><td>"can not" grammar</td></tr>
+      <tr><td><code class="path">wonder-setting-service/.../BOHDRFeeConfigurationService.java</code></td><td style="text-align:center">3</td><td>"can not delete"</td></tr>
+      <tr><td><code class="path">marketing-service/.../BOChallengeService.java</code></td><td style="text-align:center">5</td><td>"can not" + broken grammar</td></tr>
+      <tr><td>+ <em>12 more files with 1–2 issues each</em></td><td style="text-align:center">14</td><td>minor</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ===== CONCLUSION ===== -->
+<div class="card" style="background:linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%);border-left:4px solid var(--blue);">
+  <strong>📌 Summary</strong><br>
+  38 findings across <strong>~24 files</strong>. The most impactful fix is #1 (spelling — small, zero risk). The <code>DUPLICATED_NAME</code> error code requires a coordinated change since both backend and frontend parse the string literally. The 18 "can not → cannot" grammar issues are cosmetic but appear in error messages shown to internal operators and sometimes to end users. The 3 duplicate CartItemValidator files have identical issues — fixing once in all 3 is cleanest. <strong>No findings affect runtime behavior</strong> — all are cosmetic/readability.
+</div>
+
+<footer>dm-seek typo audit · wonder-consumer-project · 2026-06-14</footer>
+</body>
+</html>
