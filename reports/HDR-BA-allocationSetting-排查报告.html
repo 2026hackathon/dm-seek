@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HDR BA allocationSetting 未初始化 — 排查报告</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card-bg: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-secondary: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d2991d;
+    --purple: #a371f7;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.75rem; margin-bottom: 0.25rem; color: #f0f6fc; }
+  h2 { font-size: 1.25rem; margin: 2rem 0 0.75rem; color: #f0f6fc; border-bottom: 1px solid var(--border); padding-bottom: 0.35rem; }
+  h3 { font-size: 1.05rem; margin: 1.25rem 0 0.5rem; color: #e6edf3; }
+  .meta { color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
+  .badge-high { background: rgba(248,81,73,0.15); color: var(--red); }
+  .badge-fixed { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-warn { background: rgba(210,153,29,0.15); color: var(--yellow); }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin: 1rem 0;
+  }
+  .timeline { position: relative; padding-left: 1.5rem; }
+  .timeline::before {
+    content: '';
+    position: absolute; left: 0.4rem; top: 0; bottom: 0;
+    width: 2px; background: var(--border);
+  }
+  .timeline-item { position: relative; margin-bottom: 1.25rem; }
+  .timeline-item::before {
+    content: '';
+    position: absolute; left: -1.22rem; top: 0.45rem;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent);
+  }
+  .timeline-item.bug::before { background: var(--red); }
+  .timeline-item.fix::before { background: var(--green); }
+  .timeline-date { font-size: 0.8rem; color: var(--text-secondary); }
+  .timeline-title { font-weight: 600; }
+  pre {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+  .diff-add { color: var(--green); }
+  .diff-remove { color: var(--red); }
+  table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; }
+  th, td { padding: 0.5rem 0.75rem; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--card-bg); font-weight: 600; }
+  td { font-size: 0.9rem; }
+  .file-path { font-family: monospace; font-size: 0.82rem; color: var(--accent); }
+  ul, ol { padding-left: 1.5rem; margin: 0.5rem 0; }
+  li { margin: 0.25rem 0; }
+  code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85rem; background: rgba(110,118,129,0.1); padding: 1px 5px; border-radius: 3px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+  .summary-item { background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem; text-align: center; }
+  .summary-item .value { font-size: 1.5rem; font-weight: 700; }
+  .summary-item .label { font-size: 0.78rem; color: var(--text-secondary); }
+  .confidence-high { color: var(--green); }
+  footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.78rem; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+
+<h1>🔍 HDR 新建时 BA allocationSetting 未初始化</h1>
+<p class="meta">
+  Query ID: <code>q-20260615-001</code> &nbsp;|&nbsp;
+  Intent: 缺陷责任定位（场景3）&nbsp;|&nbsp;
+  置信度: <span class="confidence-high">高</span> &nbsp;|&nbsp;
+  2026-06-15
+</p>
+
+<div class="summary-grid">
+  <div class="summary-item">
+    <div class="value" style="color:var(--red);">DELI-4475</div>
+    <div class="label">根因工单</div>
+  </div>
+  <div class="summary-item">
+    <div class="value" style="color:var(--green);">DELI-4520</div>
+    <div class="label">修复工单</div>
+  </div>
+  <div class="summary-item">
+    <div class="value">2</div>
+    <div class="label">缺失的 BA sourceType</div>
+  </div>
+</div>
+
+<h2>一、问题概述</h2>
+<p>当新的 HDR 被创建时（通过 Kafka <code>HDRSnapshotMessage</code> → <code>handleCreate()</code>），MongoDB 中的 <code>hdr_delivery_settings</code> 文档的 <code>allocation_settings</code> 数组缺少 <code>BA_SHIPMENT_BOXED</code> 和 <code>BA_SHIPMENT_BAGGED</code> 两个 BA（Blue Apron）条目，只包含 <code>APP</code> 和 <code>CORPORATE</code>。</p>
+
+<div class="card">
+  <span class="badge badge-high">Bug</span> 受影响的 BA 订单无法正确获取默认 provider 分配，<code>TaskCreationHelper.getDefaultProvider()</code> 找不到 BA sourceType 对应的 allocation → fallback 到 <code>RELAY</code>。
+</div>
+
+<h2>二、根因分析</h2>
+
+<h3>2.1 罪魁祸首：DELI-4475</h3>
+<p><strong>提交</strong>：<code>91d86ea28</code>、<code>48c1650c0</code> 等（共 24 个 commit）<br>
+<strong>日期</strong>：2026-05-14 / 2026-05-15<br>
+<strong>标题</strong>：Wonder Local and 3P Legacy Cleanup</p>
+
+<p>该变更在 <span class="file-path">HDRDeliverySettingBuilder.java</span> 中向 <code>buildDefaultAllocationSetting()</code> 添加了 <strong>过度过滤</strong>：</p>
+
+<pre><code><span class="diff-remove">- return Arrays.stream(MongoSourceType.values()).map(sourceType -&gt; { ...</span>
+<span class="diff-remove">-    var allocationSetting = new HDRAllocationSetting();</span>
+<span class="diff-remove">-    allocationSetting.sourceType = sourceType;</span>
+<span class="diff-remove">-    allocationSetting.providerTypes = DEFAULT_ALLOCATION_PROVIDERS;</span>
+<span class="diff-remove">-    return allocationSetting;</span>
+<span class="diff-remove">- }).toList();</span>
+
+<span class="diff-add">+ return Arrays.stream(MongoSourceType.values())</span>
+<span class="diff-add">+     .filter(s -> s == MongoSourceType.APP || s == MongoSourceType.CORPORATE)</span>
+<span class="diff-add">+     .map(sourceType -&gt; { ... }).toList();</span></code></pre>
+
+<p><code>MongoSourceType</code> 枚举有 4 个值：<code>APP</code>、<strong><code>BA_SHIPMENT_BOXED</code></strong>、<strong><code>BA_SHIPMENT_BAGGED</code></strong>、<code>CORPORATE</code>。filter 显式排除了两个 BA 类型。</p>
+
+<h3>2.2 同时发生的 MongoSourceType 变更</h3>
+<p>DELI-4475 还在 <span class="file-path">MongoSourceType.java</span> 中移除了 <code>THIRD_PARTY</code> 和 <code>WONDER_LOCAL</code> 枚举值及 <code>isHDRSourceType()</code> 方法。移除枚举值是合理的清理，但 <code>buildDefaultAllocationSetting()</code> 中的 filter 是过度删除。</p>
+
+<h3>2.3 调用链</h3>
+<pre><code>Kafka: HDRSnapshotMessage (event=CREATED)
+  └─ HDRSnapshotMessageHandler.handleCreate()
+       └─ HDRDeliverySettingBuilder.buildForInitCreate()   <span class="file-path">L48-L72</span>
+            └─ buildDefaultAllocationSetting()              <span class="file-path">L98-L100</span> ← Bug 在此
+                 └─ Arrays.stream(MongoSourceType.values())
+                      .filter(APP || CORPORATE)            ← 排除了 BA
+                      .map(buildDefaultAllocationSetting)
+  └─ hdrDeliverySettingMongoCollection.replace(setting)    <span class="file-path">L89</span></code></pre>
+
+<div class="card">
+  <h3 style="margin-top:0;">受影响的下游代码</h3>
+  <table>
+    <tr><th>位置</th><th>影响</th></tr>
+    <tr>
+      <td><span class="file-path">TaskCreationHelper.java:24</span></td>
+      <td><code>getDefaultProvider()</code> 查找 BA sourceType → 未找到 → 返回默认 <code>RELAY</code></td>
+    </tr>
+    <tr>
+      <td><span class="file-path">JobProviderAllocationService.java:30</span></td>
+      <td>BA 订单无法读取对应 provider 配置</td>
+    </tr>
+    <tr>
+      <td><span class="file-path">ParallelSearchService.java:71</span></td>
+      <td>并行搜索只用到 APP sourceType，未受影响</td>
+    </tr>
+  </table>
+</div>
+
+<h2>三、修复：DELI-4520</h2>
+<p><strong>提交</strong>：<code>dc1ee5ce7</code> → <code>44f609ec8</code>（合并提交）<br>
+<strong>日期</strong>：2026-06-11<br>
+<strong>标题</strong>：Fixed the issue where the newly added HDR BA allocation setting was empty.</p>
+
+<h3>3.1 代码修复</h3>
+<pre><code><span class="diff-remove">- return Arrays.stream(MongoSourceType.values())</span>
+<span class="diff-remove">-     .filter(s -> s == MongoSourceType.APP || s == MongoSourceType.CORPORATE)</span>
+<span class="diff-remove">-     .map(sourceType -> { ... }).toList();</span>
+
+<span class="diff-add">+ return Arrays.stream(MongoSourceType.values())</span>
+<span class="diff-add">+     .map(HDRDeliverySettingBuilder::buildDefaultAllocationSetting)</span>
+<span class="diff-add">+     .toList();</span>
+<span class="diff-add">+ </span>
+<span class="diff-add">+ public static HDRAllocationSetting buildDefaultAllocationSetting(MongoSourceType sourceType) {</span>
+<span class="diff-add">+     var allocationSetting = new HDRAllocationSetting();</span>
+<span class="diff-add">+     allocationSetting.sourceType = sourceType;</span>
+<span class="diff-add">+     allocationSetting.providerTypes = DEFAULT_ALLOCATION_PROVIDERS;</span>
+<span class="diff-add">+     return allocationSetting;</span>
+<span class="diff-add">+ }</span></code></pre>
+
+<h3>3.2 存量回填（Migration DELI-4521）</h3>
+<p>新增 <span class="file-path">HDRDeliverySettingScript.backfillBAAllocationSetting()</span> — 扫描全部 <code>hdr_delivery_settings</code> 文档，对每个缺失 <code>BA_SHIPMENT_BOXED</code> 或 <code>BA_SHIPMENT_BAGGED</code> allocation 的 HDR 补回默认配置：</p>
+<pre><code>var baSourceTypes = List.of("BA_SHIPMENT_BOXED", "BA_SHIPMENT_BAGGED");
+var defaultProviders = List.of("RELAY", "GRUBHUB", "DOORDASH", "NASH");
+// 对每个文档：检查缺失 → 追加 source_type + provider_types + exception_allocation_settings</code></pre>
+
+<h3>3.3 临时方案清理</h3>
+<p>删除临时 HTTP 端点 <code class="file-path">HDRBAAllocationInitController</code> 及路由 <code>/_app/hdr/allocation/ba-init</code>——该 Controller 是 DELI-4475 之后的手动修复工具。</p>
+
+<h2>四、完整时间线</h2>
+<div class="timeline">
+  <div class="timeline-item bug">
+    <div class="timeline-date">2026-05-14</div>
+    <div class="timeline-title">🟡 DELI-4475 — Wonder Local and 3P Legacy Cleanup</div>
+    <p>修改 <code>buildDefaultAllocationSetting()</code> 添加 filter 仅保留 APP + CORPORATE，<strong>BA allocation 被移除</strong>。同时清理 <code>MongoSourceType</code> 枚举移除 THIRD_PARTY 和 WONDER_LOCAL。</p>
+  </div>
+  <div class="timeline-item bug">
+    <div class="timeline-date">2026-05-14 → 2026-06-11</div>
+    <div class="timeline-title">🔴 28 天 Bug 窗口</div>
+    <p>在此期间通过 Kafka <code>CREATED</code> 事件新建的全部 HDR，其 <code>allocation_settings</code> 仅含 APP + CORPORATE 两项，缺失 BA 配置。</p>
+  </div>
+  <div class="timeline-item fix">
+    <div class="timeline-date">2026-06-11</div>
+    <div class="timeline-title">🟢 DELI-4520 — 修复 + DELI-4521 回填</div>
+    <p>移除 filter，恢复遍历全部 <code>MongoSourceType</code>；新增 migration 脚本回填存量 HDR；删除临时 <code>HDRBAAllocationInitController</code>。</p>
+  </div>
+  <div class="timeline-item">
+    <div class="timeline-date">当前</div>
+    <div class="timeline-title">⚪ master HEAD = <code>44f609ec8</code>（DELI-4520）</div>
+    <p>代码已修复。检查部署状态和存量回填。</p>
+  </div>
+</div>
+
+<h2>五、涉及文件</h2>
+<table>
+  <tr><th>文件</th><th>角色</th></tr>
+  <tr><td class="file-path">backend/delivery-task-v2-service/src/main/java/.../HDRDeliverySettingBuilder.java</td><td>Bug 引入点 &amp; 修复点（<code>buildDefaultAllocationSetting()</code> L98-107）</td></tr>
+  <tr><td class="file-path">backend/delivery-task-v2-service/src/main/java/.../common/domain/MongoSourceType.java</td><td>SourceType 枚举 — DELI-4475 清理后保留 4 个值（含 BA 两个）</td></tr>
+  <tr><td class="file-path">backend/delivery-task-v2-service/src/main/java/.../deliverysetting/domain/HDRAllocationSetting.java</td><td>分配设置 domain（sourceType + providerTypes + exceptions）</td></tr>
+  <tr><td class="file-path">backend/delivery-task-v2-service/src/main/java/.../kafka/HDRSnapshotMessageHandler.java</td><td>HDR 创建入口 — Kafka handler 调用 <code>buildForInitCreate()</code> L88</td></tr>
+  <tr><td class="file-path">backend/delivery-task-v2-service-mongo-migration/.../HDRDeliverySettingScript.java</td><td>Migration：回填脚本 <code>backfillBAAllocationSetting()</code> L63-90</td></tr>
+  <tr><td class="file-path">backend/delivery-task-v2-service/src/main/java/.../task/service/TaskCreationHelper.java</td><td>受影响的下游 — <code>getDefaultProvider()</code> L23-26 依赖 allocation 查找</td></tr>
+  <tr><td class="file-path">backend/delivery-task-v2-service/src/main/java/.../web/HDRBAAllocationInitController.java</td><td>已删除 — DELI-4475 后的临时手动修复端点</td></tr>
+</table>
+
+<h2>六、当前状态与行动建议</h2>
+
+<div class="card" style="border-left: 3px solid var(--yellow);">
+  <h3 style="margin-top:0;">⚠️ 待确认</h3>
+  <ol>
+    <li><strong>服务是否已重新部署？</strong>代码修复在 master HEAD，但线上可能仍运行 DELI-4475 版本的 jar。<br>
+        → 确认部署版本 &amp; 重新构建部署。</li>
+    <li><strong>回填 migration 是否已执行？</strong><code>backfillBAAllocationSetting</code>（DELI-4521）修复 5/14–6/11 期间创建的受影响 HDR。<br>
+        → 在 MongoDB 中验证：<code>db.hdr_delivery_settings.find({"allocation_settings.source_type": "BA_SHIPMENT_BOXED"}).count()</code></li>
+    <li><strong>如仍有新 HDR 缺失 BA</strong>，检查是否有其他创建路径绕过了 <code>buildForInitCreate()</code>（当前排查未发现其他路径）。</li>
+  </ol>
+</div>
+
+<div class="card" style="border-left: 3px solid var(--green);">
+  <h3 style="margin-top:0;">✅ 已确认</h3>
+  <ul>
+    <li>根因：DELI-4475 的 filter 显式排除了 BA sourceType</li>
+    <li>修复：DELI-4520 已合并到 master（HEAD: <code>44f609ec8</code>）</li>
+    <li>当前 <code>buildDefaultAllocationSetting()</code> 代码正确：遍历全部 <code>MongoSourceType.values()</code> 无 filter</li>
+    <li>存量回填脚本已就绪，覆盖全部 HDR（无论状态）</li>
+  </ul>
+</div>
+
+<h2>七、出处索引</h2>
+<table>
+  <tr><th>类型</th><th>出处</th></tr>
+  <tr><td>Commit</td><td><code>91d86ea28</code> — DELI-4475 引入 Bug（MongoSourceType + buildDefaultAllocationSetting）</td></tr>
+  <tr><td>Commit</td><td><code>48c1650c0</code> — DELI-4475 HDRDeliverySettingBuilder change</td></tr>
+  <tr><td>Commit</td><td><code>dc1ee5ce7</code> — DELI-4520 修复（Builder + Migration + Controller 删除）</td></tr>
+  <tr><td>Commit</td><td><code>44f609ec8</code> — DELI-4520 merge to master</td></tr>
+  <tr><td>Code</td><td><span class="file-path">HDRDeliverySettingBuilder.java:59,98-107</span></td></tr>
+  <tr><td>Code</td><td><span class="file-path">MongoSourceType.java:8-17</span></td></tr>
+  <tr><td>Code</td><td><span class="file-path">HDRDeliverySettingScript.java:63-90</span>（回填 migration）</td></tr>
+  <tr><td>Code</td><td><span class="file-path">HDRSnapshotMessageHandler.java:81-103</span>（HDR 创建链路）</td></tr>
+  <tr><td>Code</td><td><span class="file-path">TaskCreationHelper.java:23-26</span>（下游影响）</td></tr>
+</table>
+
+<footer>
+  报告由 dm-seek（马冬梅计划）生成 &nbsp;|&nbsp; Query: q-20260615-001 &nbsp;|&nbsp; 置信度: 高 &nbsp;|&nbsp; 三源（code ✓ / git ✓ / jira ✗）&nbsp;|&nbsp; 2026-06-15
+</footer>
+
+</body>
+</html>
