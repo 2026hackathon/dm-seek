@@ -77,6 +77,7 @@ dm-seek 是一个由 **7 个 AI Agent 组成的智能团队**，以 **Claude Cod
 
 - dm-seek 默认使用 CLI 输出结论。在分析完成后，你可以要求他生成一份 HTML 报告
 - [HTML 输出报告样例](reports/HDR-BA-allocationSetting-排查报告.html)
+- [运行全流程详情](reports/dm-seek-全流程总结.html)
 - [更多报告样例](https://github.com/2026hackathon/dm-seek/tree/main/reports)
 
 ---
