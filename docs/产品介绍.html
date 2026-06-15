@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dm-seek（马冬梅计划）产品介绍</title>
+<style>
+  :root {
+    --primary: #1a56db;
+    --primary-light: #e8f0fe;
+    --primary-dark: #0f3b99;
+    --bg: #f8fafc;
+    --card-bg: #ffffff;
+    --text: #1e293b;
+    --text-secondary: #64748b;
+    --border: #e2e8f0;
+    --success: #059669;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --accent-1: #7c3aed;
+    --accent-2: #0891b2;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.75;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Header ── */
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 40%, #1a56db 100%);
+    color: #fff;
+    padding: 56px 32px 48px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-size: 40px; font-weight: 800; letter-spacing: -0.5px;
+    position: relative; margin-bottom: 8px;
+  }
+  .hero .subtitle {
+    font-size: 17px; opacity: 0.85; font-weight: 400; max-width: 680px;
+    margin: 0 auto 16px; position: relative;
+  }
+  .hero .oneliner {
+    display: inline-block; background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.18); border-radius: 20px;
+    padding: 8px 22px; font-size: 14px; margin-top: 4px; position: relative;
+    backdrop-filter: blur(8px);
+  }
+  .hero .badges {
+    margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; position: relative;
+  }
+  .hero .badge {
+    background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px; padding: 5px 16px; font-size: 13px; color: #fff;
+  }
+
+  /* ── Container ── */
+  .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── Section ── */
+  section { padding: 48px 0; }
+  section + section { border-top: 1px solid var(--border); }
+
+  h2 {
+    font-size: 26px; font-weight: 700; color: #0f172a;
+    margin-bottom: 8px; padding-bottom: 12px;
+    border-bottom: 3px solid var(--primary);
+    display: inline-block;
+  }
+  h3 { font-size: 20px; font-weight: 700; color: #1e3b5f; margin: 32px 0 12px; }
+  h4 { font-size: 16px; font-weight: 700; color: var(--text); margin: 20px 0 8px; }
+
+  .section-intro {
+    color: var(--text-secondary); font-size: 15px; margin-bottom: 24px; max-width: 720px;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 24px 28px; box-shadow: var(--shadow); margin: 32px 0 0;
+  }
+  .toc h3 { margin-top: 0; font-size: 15px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+  .toc ol { columns: 2; column-gap: 40px; padding-left: 20px; }
+  .toc li { margin-bottom: 4px; break-inside: avoid; }
+  .toc a { color: var(--primary); text-decoration: none; font-size: 14px; }
+  .toc a:hover { text-decoration: underline; }
+
+  /* ── Cards ── */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 20px 0; }
+  .card {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px; box-shadow: var(--shadow);
+  }
+  .card h4 { margin-top: 0; font-size: 15px; }
+  .card p { font-size: 13px; color: var(--text-secondary); margin: 0; }
+
+  .pain-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 16px 0; }
+  .pain-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center; }
+  .pain-card .icon { font-size: 28px; margin-bottom: 6px; }
+  .pain-card .title { font-weight: 700; font-size: 14px; }
+  .pain-card .desc { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+
+  /* ── Tables ── */
+  .table-wrap { overflow-x: auto; margin: 16px 0; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 14px;
+    background: var(--card-bg); border-radius: var(--radius);
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  thead th {
+    background: #f1f5f9; text-align: left; padding: 12px 16px;
+    font-weight: 700; font-size: 13px; color: var(--text-secondary);
+    text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 2px solid var(--border);
+  }
+  tbody td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: #f8fafc; }
+
+  /* ── Flow diagram ── */
+  .flow-diagram {
+    background: #0f172a; color: #e2e8f0; border-radius: var(--radius);
+    padding: 28px 24px; font-family: "SF Mono", "Cascadia Code", "Fira Code", "Consolas", monospace;
+    font-size: 12.5px; line-height: 1.5; overflow-x: auto; white-space: pre;
+    margin: 16px 0; box-shadow: var(--shadow-md);
+  }
+  .flow-diagram.light { background: #f1f5f9; color: #1e293b; }
+
+  /* ── Agent architecture ── */
+  .arch-diagram {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 28px; text-align: center; box-shadow: var(--shadow); margin: 16px 0;
+  }
+  .arch-top { margin-bottom: 12px; }
+  .arch-top .node {
+    display: inline-block; background: var(--primary); color: #fff; border-radius: 12px;
+    padding: 14px 28px; font-weight: 700; font-size: 16px; box-shadow: 0 2px 8px rgba(26,86,219,0.25);
+  }
+  .arch-top .sub { font-size: 12px; opacity: 0.85; font-weight: 400; margin-top: 2px; }
+  .arch-arrow { margin: 4px 0 8px; color: var(--primary); font-size: 18px; }
+  .arch-row { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .arch-row .agent {
+    background: #f1f5f9; border: 2px solid var(--border); border-radius: var(--radius);
+    padding: 14px 12px; width: 130px; text-align: center; transition: all 0.2s;
+  }
+  .arch-row .agent:hover { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+  .arch-row .agent .name { font-weight: 700; font-size: 13px; color: #1e3b5f; }
+  .arch-row .agent .role { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .arch-sources { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .arch-sources .src {
+    background: #fef3c7; border-radius: 6px; padding: 6px 14px; font-size: 12px;
+    color: #92400e; font-weight: 600;
+  }
+
+  /* ── Agent cards grid ── */
+  .agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin: 20px 0; }
+  .agent-card {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px; box-shadow: var(--shadow); border-left: 4px solid var(--primary);
+    transition: box-shadow 0.2s;
+  }
+  .agent-card:hover { box-shadow: var(--shadow-md); }
+  .agent-card:nth-child(2) { border-left-color: #7c3aed; }
+  .agent-card:nth-child(3) { border-left-color: #059669; }
+  .agent-card:nth-child(4) { border-left-color: #d97706; }
+  .agent-card:nth-child(5) { border-left-color: #0891b2; }
+  .agent-card:nth-child(6) { border-left-color: #db2777; }
+  .agent-card:nth-child(7) { border-left-color: #dc2626; }
+  .agent-card .agent-name { font-weight: 700; font-size: 16px; }
+  .agent-card .agent-meta { font-size: 12px; color: var(--text-secondary); }
+  .agent-card .agent-desc { font-size: 13px; margin-top: 6px; color: var(--text-secondary); }
+  .agent-card .agent-source { margin-top: 8px; font-size: 12px; color: var(--primary-dark); background: var(--primary-light); display: inline-block; padding: 2px 10px; border-radius: 12px; }
+
+  /* ── Defense tiers ── */
+  .defense-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin: 16px 0; }
+  .defense-card {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px; box-shadow: var(--shadow); text-align: center;
+  }
+  .defense-card .tier { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .defense-card .tier.l1 { color: #dc2626; }
+  .defense-card .tier.l2 { color: #d97706; }
+  .defense-card .tier.l3 { color: #7c3aed; }
+  .defense-card .mechanism { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .defense-card .purpose { font-size: 13px; color: var(--text-secondary); }
+
+  /* ── Steps ── */
+  .step-list { list-style: none; padding: 0; }
+  .step-item {
+    display: flex; gap: 16px; align-items: flex-start; padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .step-item:last-child { border-bottom: none; }
+  .step-num {
+    flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%;
+    background: var(--primary); color: #fff; display: flex; align-items: center;
+    justify-content: center; font-weight: 700; font-size: 14px;
+  }
+  .step-body h4 { margin: 0 0 2px; font-size: 15px; }
+  .step-body p { margin: 0; font-size: 13px; color: var(--text-secondary); }
+
+  /* ── Workflow pipeline ── */
+  .pipeline {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center;
+    margin: 20px 0; font-size: 13px;
+  }
+  .pipeline .pipe-node {
+    background: var(--primary-light); color: var(--primary-dark); padding: 10px 16px;
+    border-radius: 20px; font-weight: 700; white-space: nowrap;
+  }
+  .pipeline .pipe-arrow { color: var(--primary); font-size: 18px; font-weight: 700; }
+
+  /* ── Callout ── */
+  .callout {
+    border-left: 4px solid var(--primary); background: var(--primary-light);
+    padding: 14px 18px; border-radius: 0 var(--radius) var(--radius) 0;
+    margin: 16px 0; font-size: 14px;
+  }
+  .callout.warning { border-left-color: var(--warning); background: #fffbeb; }
+  .callout.success { border-left-color: var(--success); background: #ecfdf5; }
+
+  /* ── Two-column ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 16px 0; }
+  @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* ── Footer ── */
+  .page-footer {
+    text-align: center; padding: 32px 0; color: var(--text-secondary);
+    font-size: 13px; border-top: 1px solid var(--border);
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 28px; }
+    .hero { padding: 36px 16px 32px; }
+    section { padding: 32px 0; }
+    .toc ol { columns: 1; }
+    .arch-row .agent { width: 100px; padding: 10px 6px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════ HERO ════════════ -->
+<header class="hero">
+  <h1>dm-seek</h1>
+  <p style="font-size:18px;font-weight:600;opacity:0.9;position:relative;">马冬梅计划</p>
+  <p class="subtitle">面向研发全角色的「代码现实 × 需求演进」智能追溯系统</p>
+  <p class="oneliner">一句自然语言疑问 → 有出处、带置信度的功能演变报告</p>
+  <div class="badges">
+    <span class="badge">🤖 7 Agent 智能团队</span>
+    <span class="badge">⚡ Claude Code 引擎</span>
+    <span class="badge">🔗 代码 · Git · Jira 三源闭环</span>
+    <span class="badge">🖥️ Windows / macOS</span>
+    <span class="badge">🇨🇳 中文原生</span>
+  </div>
+</header>
+
+<div class="container">
+
+<!-- ════════════ TOC ════════════ -->
+<nav class="toc">
+  <h3>📑 目录</h3>
+  <ol>
+    <li><a href="#s1">产品概述</a></li>
+    <li><a href="#s2">服务人群</a></li>
+    <li><a href="#s3">应用场景</a></li>
+    <li><a href="#s4">团队角色与协作</a></li>
+    <li><a href="#s5">工作流程</a></li>
+    <li><a href="#s6">依赖组件</a></li>
+    <li><a href="#s7">输出产物</a></li>
+    <li><a href="#s8">初始化方式</a></li>
+    <li><a href="#s9">安全与边界</a></li>
+  </ol>
+</nav>
+
+<!-- ════════════ 1. 产品概述 ════════════ -->
+<section id="s1">
+  <h2>1. 产品概述</h2>
+
+  <h3>1.1 解决什么问题</h3>
+  <p class="section-intro">一个功能的完整认知天然分散在四个互相割裂的信息孤岛中。当任何一方与「某人的记忆」产生认知偏差时，就会引发沟通摩擦、决策失误、责任争议。</p>
+
+  <div class="pain-grid">
+    <div class="pain-card"><div class="icon">📁</div><div class="title">代码库</div><div class="desc">它现在「是什么样」<br>只有开发能读懂</div></div>
+    <div class="pain-card"><div class="icon">🕰️</div><div class="title">Git 历史</div><div class="desc">「怎么一步步变成今天这样」<br>散落在 commit log 里</div></div>
+    <div class="pain-card"><div class="icon">🎫</div><div class="title">Jira 工单</div><div class="desc">每次变更「为什么发生」<br>淹没在工单海洋中</div></div>
+    <div class="pain-card"><div class="icon">🎨</div><div class="title">Figma（二期）</div><div class="desc">当初的「设计意图」<br>与实现脱节</div></div>
+  </div>
+
+  <h3>1.2 核心能力</h3>
+  <p>dm-seek 是一个由 <strong>7 个 AI Agent 组成的智能团队</strong>，以 <strong>Claude Code 为运行引擎</strong>，在你输入一句自然语言疑问后，全自动完成：</p>
+
+  <div class="pipeline">
+    <span class="pipe-node">📚 知识库线索</span>
+    <span class="pipe-arrow">→</span>
+    <span class="pipe-node">🔍 代码定位解读</span>
+    <span class="pipe-arrow">→</span>
+    <span class="pipe-node">🕰️ Git 时间线</span>
+    <span class="pipe-arrow">→</span>
+    <span class="pipe-node">🎫 工单号抽取</span>
+    <span class="pipe-arrow">→</span>
+    <span class="pipe-node">📋 Jira 业务原因</span>
+    <span class="pipe-arrow">→</span>
+    <span class="pipe-node">🧠 综合结论</span>
+    <span class="pipe-arrow">→</span>
+    <span class="pipe-node">✅ 证据校验</span>
+  </div>
+
+  <p style="text-align:center;margin-top:8px;">最终交付一份<strong>有出处、带置信度的功能演变报告</strong>——每个结论都挂着具体的代码行、commit hash、Jira 工单号。</p>
+
+  <h3>1.3 核心设计原则</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>🏛️ 以代码为唯一事实基准</h4>
+      <p>一切结论必须能回挂到具体的代码 / commit / Jira 出处；当「代码现实」与「记忆/文档」冲突时，以代码为锚。</p>
+    </div>
+    <div class="card">
+      <h4>🔒 所有操作只读</h4>
+      <p>代码、Git 仓库、Jira 均只读取不修改。仅 <code>git fetch</code> 和知识库写为例外。</p>
+    </div>
+    <div class="card">
+      <h4>🌱 知识自增长</h4>
+      <p>每次查询结论自动沉淀回知识库，同类问题下次秒答，越用越聪明。</p>
+    </div>
+    <div class="card">
+      <h4>🔄 证据不足则发散返工</h4>
+      <p>不臆造结论。最多 2 轮扩大搜索；仍不足则降级交付并显式声明"证据不足"。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════ 2. 服务人群 ════════════ -->
+<section id="s2">
+  <h2>2. 服务人群</h2>
+  <p class="section-intro">dm-seek 面向<strong>研发全角色</strong>——不只是开发者，还包括产品、测试、架构等所有需要理解「代码现实」的人。</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>角色</th><th>典型痛点</th><th>dm-seek 提供</th></tr></thead>
+    <tbody>
+      <tr><td><strong>👨‍💻 开发者</strong></td><td>调试时不知这段逻辑为什么写成这样；接手遗留代码无文档</td><td>Git → Commit → Jira 自动还原决策链</td></tr>
+      <tr><td><strong>🧪 测试工程师</strong></td><td>发现 Bug 但不确定是「实现偏差」还是「需求变更未同步」</td><td>代码 vs Jira 原始需求对比</td></tr>
+      <tr><td><strong>📊 产品经理</strong></td><td>想知道某个功能的设计决策历程，但不会翻代码</td><td>自然语言提问，executiveSummary 用业务语言回答</td></tr>
+      <tr><td><strong>🏗️ 架构师</strong></td><td>评估跨团队接口变更的影响范围</td><td>调用链追踪 + 跨仓库变更分析</td></tr>
+      <tr><td><strong>🌱 新成员</strong></td><td>入职不知从何看起，问资深开发有时差/负担</td><td>一句自然语言，分钟级上手模块知识</td></tr>
+      <tr><td><strong>🌐 非研发用户</strong></td><td>没有本地代码仓库</td><td>全流程经 GitHub MCP 远端取代码完成溯源</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>2.1 两种使用模式</h3>
+  <div class="two-col">
+    <div class="card">
+      <h4>🏠 态B — 本地仓库模式</h4>
+      <p style="margin:0;">适用：开发者、架构师（有本地 git 仓库）</p>
+      <p style="margin:4px 0 0;font-size:13px;color:var(--text-secondary);">直读本地代码 + 本地 Git 历史，过时自动询问是否切换远端</p>
+    </div>
+    <div class="card">
+      <h4>☁️ 态A — 远端仓库模式</h4>
+      <p style="margin:0;">适用：PM、测试、非研发用户（无本地仓库）</p>
+      <p style="margin:4px 0 0;font-size:13px;color:var(--text-secondary);">全程经 GitHub MCP 获取代码与提交历史，无需本地环境</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════ 3. 应用场景 ════════════ -->
+<section id="s3">
+  <h2>3. 应用场景</h2>
+  <p class="section-intro">首批已识别 <strong>9 大场景</strong>（场景 9 含 Figma 设计追溯，属二期能力）。场景清单可扩展，不视为封闭集合。</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>#</th><th>场景</th><th>典型问题</th><th>主要受益角色</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><strong>实现与需求差异核查</strong></td><td>"这段代码和 Jira 需求对得上吗？谁先变的？"</td><td>PM、测试</td></tr>
+      <tr><td>2</td><td><strong>新需求影响范围评估</strong></td><td>"美国 PM 提的新需求，对现有功能有什么影响？"</td><td>PM、开发</td></tr>
+      <tr><td>3</td><td><strong>缺陷责任定位</strong></td><td>"这个 Bug 是谁引入的？什么时候？关联哪个工单？"</td><td>测试</td></tr>
+      <tr><td>4</td><td><strong>新成员知识加速</strong></td><td>"订单状态机逻辑在哪？当时的业务规则是什么？"</td><td>新人、开发</td></tr>
+      <tr><td>5</td><td><strong>技术债务定性</strong></td><td>"这个复杂逻辑是有意的业务决策，还是临时方案没清理？"</td><td>开发、架构</td></tr>
+      <tr><td>6</td><td><strong>回归缺陷溯源</strong></td><td>"这个功能最近被改过吗？是哪次提交引入的问题？"</td><td>测试、开发</td></tr>
+      <tr><td>7</td><td><strong>功能蒸发追踪</strong></td><td>"这个功能为什么被删了？什么时候？谁决定的？"</td><td>PM、测试</td></tr>
+      <tr><td>8</td><td><strong>跨团队接口争议仲裁</strong></td><td>"约定变更 vs 代码实现——哪个是先发生的？"</td><td>前后端、测试</td></tr>
+      <tr><td>9</td><td><strong>设计与实现对齐审查</strong> 🔮</td><td>"设计稿画的和代码做的是同一个东西吗？"</td><td>PM、测试</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>场景举例</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>🌱 场景 A：新人快速上手</h4>
+      <p style="margin:0;">"这个订单状态机逻辑在哪？对应的业务规则是什么？"</p>
+      <p style="margin:8px 0 0;">从 KB 找线索 → 定位代码 → 拉 Git 历史 + Jira → 组装出模块设计决策历程。<strong>不需要翻 6 个月的 Slack 和 Confluence</strong>，上手时间从天级缩短到分钟级。</p>
+    </div>
+    <div class="card">
+      <h4>🌍 场景 B：跨地域需求影响评估</h4>
+      <p style="margin:0;">"美国 PM 提了个需求，我们要怎么评估对现有功能的影响？"</p>
+      <p style="margin:8px 0 0;">跨国团队典型痛点。一键追溯代码 + Git 变更模式 + Jira 历史，输出影响范围与隐性耦合——<strong>不再依赖"问资深开发"</strong>。</p>
+    </div>
+    <div class="card">
+      <h4>🏚️ 场景 C：遗留代码理解</h4>
+      <p style="margin:0;">"这段 3 年前的代码没有注释，当时为什么这么写？"</p>
+      <p style="margin:8px 0 0;">通过 <strong>Git blame → Commit message → Jira ticket</strong> 链路自动还原当时的业务决策链，解决"知其然不知其所以然"的长期痛点。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════ 4. 团队角色与协作 ════════════ -->
+<section id="s4">
+  <h2>4. 团队角色与协作</h2>
+  <p class="section-intro">运行形态为 <strong>agent team（teammate）</strong>——7 个 AI Agent 是平级 teammate，经共享任务列表 + 消息协作，而非传统的"一个主控调用多个子 Agent"模型。</p>
+
+  <h3>4.1 团队架构</h3>
+  <div class="arch-diagram">
+    <div class="arch-top">
+      <div class="node">dongmei-ma<div class="sub">协调者 · 用户接口 · "你只需要和它对话"</div></div>
+    </div>
+    <div class="arch-arrow">▼ 派发任务 / 消息驱动 ▼</div>
+    <div class="arch-row">
+      <div class="agent"><div class="name">📚 kb-keeper</div><div class="role">知识库读写管家</div></div>
+      <div class="agent"><div class="name">🔍 code-analyst</div><div class="role">代码定位与解读</div></div>
+      <div class="agent"><div class="name">🕰️ repo-tracer</div><div class="role">Git 网关 · 时间线收口</div></div>
+      <div class="agent"><div class="name">🎫 jira-tracer</div><div class="role">Jira 业务原因</div></div>
+      <div class="agent"><div class="name">🧠 synthesizer</div><div class="role">综合研判 · 结论产出</div></div>
+      <div class="agent"><div class="name">✅ evidence-verifier</div><div class="role">证据校验 · 品质把关</div></div>
+    </div>
+    <div class="arch-sources">
+      <span class="src">Obsidian 知识库</span>
+      <span class="src">本地代码 + Git</span>
+      <span class="src">GitHub MCP（多仓）</span>
+      <span class="src">Jira MCP（只读）</span>
+      <span class="src">上游三源产物</span>
+      <span class="src">上游全产物</span>
+    </div>
+  </div>
+
+  <h3>4.2 角色详解</h3>
+  <div class="agent-grid">
+    <div class="agent-card">
+      <div class="agent-name">🤝 dongmei-ma</div>
+      <div class="agent-meta">协调者 · 兼团队启动器</div>
+      <div class="agent-desc">用户唯一对话接口。解析疑问、拆解任务、驱动全链路、决策交付或返工。自检 Agent 就绪状态。默认中文交付报告。</div>
+      <div class="agent-source">不直连任何信息源（纯协调）</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-name">📚 kb-keeper</div>
+      <div class="agent-meta">知识库读写管家</div>
+      <div class="agent-desc">唯一知识库读写口。查 KB 给线索 → 终局沉淀结论回 KB。区分权威结论区（<code>queries/</code>）与增量区（<code>modules/</code> / <code>entrypoints/</code>）。不读源码。</div>
+      <div class="agent-source">Obsidian CLI + Knowlery 插件</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-name">🔍 code-analyst</div>
+      <div class="agent-meta">代码侦探</div>
+      <div class="agent-desc">根据 KB 线索定位并解读代码（core-ng 框架识别）。审视 KB 描述 vs 代码现实的匹配度。KB 未命中时自行源码兜底。态B 可直读本地 Git 历史。</div>
+      <div class="agent-source">本地代码（Read/Grep/Glob）+ 本地 Git</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-name">🕰️ repo-tracer</div>
+      <div class="agent-meta">Git 历史学家</div>
+      <div class="agent-desc">Git/GitHub 网关。统一收口提交时间线 + 从 commit subject 抽取 Jira 工单号。管理 N 个仓库的 GitHub MCP 实例（每仓独立 token）。Revert 提交自动穿透到原工单。</div>
+      <div class="agent-source">本地 Git + GitHub MCP（远端独占）</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-name">🎫 jira-tracer</div>
+      <div class="agent-meta">Jira 业务分析师</div>
+      <div class="agent-desc">查询 Jira 工单详情：业务原因、因果脉络、关联工单。追溯 issuelinks + parent 组装多工单因果链。</div>
+      <div class="agent-source">Jira MCP（只读，仅 jira_get）</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-name">🧠 synthesizer</div>
+      <div class="agent-meta">综合分析师</div>
+      <div class="agent-desc">综合代码 + Git + Jira 三源，产出双层结论。① executiveSummary（面向业务人员的自然语言摘要）② 完整结论（场景特定结构化分析 + 证据链 + 偏差注记）。</div>
+      <div class="agent-source">上游三源产物（不直连信息源）</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-name">✅ evidence-verifier</div>
+      <div class="agent-meta">品质审核员</div>
+      <div class="agent-desc">校验每条结论是否挂着出处，给出置信度（高/中/低）。证据不足时触发发散返工。标记边界违规（结论引用了声明范围外的数据来源）。</div>
+      <div class="agent-source">上游全部产物（不直连信息源）</div>
+    </div>
+  </div>
+
+  <h3>4.3 协作方式</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>💬 消息驱动</h4>
+      <p>通过 <code>SendMessage</code> 工具 + 共享任务列表（<code>TaskCreate</code>/<code>TaskUpdate</code>）协作，所有 Agent 平级。</p>
+    </div>
+    <div class="card">
+      <h4>🤝 协调者非父节点</h4>
+      <p>dongmei-ma 是协调者 teammate，不是其他 Agent 的"父"——不存在父子委派关系。</p>
+    </div>
+    <div class="card">
+      <h4>🔐 信息源独占</h4>
+      <p>GitHub MCP 仅 repo-tracer / Jira MCP 仅 jira-tracer / KB 读写真 kb-keeper——靠三道防线保证边界。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════ 5. 工作流程 ════════════ -->
+<section id="s5">
+  <h2>5. 工作流程</h2>
+
+  <h3>5.1 标准查询流程 — 一次完整溯源</h3>
+
+  <ol class="step-list">
+    <li class="step-item">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h4>dongmei-ma 解析疑问</h4>
+        <p>拆解意图（是什么 / 为什么 / 影响范围 / 责任定位），生成 queryId，派发任务到共享任务列表。</p>
+      </div>
+    </li>
+    <li class="step-item">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h4>kb-keeper 查询知识库</h4>
+        <p>返回线索：模块名、文件路径、核心类、已有结论。若命中已有结论 → 秒答跳过全链路。</p>
+      </div>
+    </li>
+    <li class="step-item">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h4>code-analyst 定位并解读代码</h4>
+        <p>据线索定位具体代码段（core-ng 框架识别）。KB 未命中 → 源码关键词兜底搜索。审视 KB vs 代码现实的匹配度（consistent / partial / stale / contradicted）。态B 直读本地代码 + 本地 Git；态A 经 repo-tracer 远端取码。</p>
+      </div>
+    </li>
+    <li class="step-item">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h4>repo-tracer 提取提交时间线</h4>
+        <p>拉取相关文件的 Git 提交历史。从 commit subject 自动抽取 Jira 工单号（正则 <code>[A-Z]+-\d+</code>，如 DELI-4480）。多仓场景自动路由到对应 GitHub MCP 实例。Revert 提交自动穿透到原始工单。</p>
+      </div>
+    </li>
+    <li class="step-item">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <h4>jira-tracer 查询业务原因</h4>
+        <p>逐一获取 Jira 工单详情。追溯关联工单（issuelinks + parent）→ 组装多工单因果脉络。</p>
+      </div>
+    </li>
+    <li class="step-item">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <h4>synthesizer 综合研判</h4>
+        <p>依据场景类型选择分析方法（9 场景）。交叉验证三源一致性。以代码为准处理冲突（记录为"记录与实现的偏差"）。<strong>双层输出</strong>：① executiveSummary（业务语言）② 完整结论（证据链 + 偏差注记）。</p>
+      </div>
+    </li>
+    <li class="step-item">
+      <div class="step-num">7</div>
+      <div class="step-body">
+        <h4>evidence-verifier 证据校验</h4>
+        <p>每条结论是否挂着代码 / commit / Jira 出处？三源齐备且印证 = <strong>高置信度</strong>；缺 Jira = <strong>中</strong>；依赖推断 = <strong>低</strong>。标记边界违规。证据充分 → 交付 + 沉淀；不足 → 发散返工（最多 2 轮）。</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="two-col" style="margin-top:24px;">
+    <div class="callout success">
+      <strong>✅ 证据充足</strong><br>
+      dongmei-ma 交付报告 → kb-keeper 沉淀到 <code>queries/</code>（权威结论区）。知识自增长，下次秒答。
+    </div>
+    <div class="callout warning">
+      <strong>⚠️ 证据不足</strong><br>
+      发散重派（回到 Step 3 扩大搜索）→ 重新综合。最多 2 轮。仍不足 → <strong>降级交付</strong>，明确声明"证据不足"并标注具体缺口。
+    </div>
+  </div>
+
+  <h3>5.2 知识自增长闭环</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>📝 终局沉淀</h4>
+      <p>查询完成后，dongmei-ma 委托 kb-keeper 将最终结论写入 <code>queries/</code>（权威结论区）。</p>
+    </div>
+    <div class="card">
+      <h4>🔍 增量沉淀</h4>
+      <p>code-analyst / repo-tracer / jira-tracer 调查过程中发现的增量知识（偏差校正、新入口点、新 commit 线索等），归并后统一写入 <code>modules/</code> / <code>entrypoints/</code>。</p>
+    </div>
+    <div class="card">
+      <h4>⚡ 下次秒答</h4>
+      <p>同领域问题再次提问时，kb-keeper 直接命中已有结论——跳过全链路，即时返回。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════ 6. 依赖组件 ════════════ -->
+<section id="s6">
+  <h2>6. 依赖组件</h2>
+
+  <h3>6.1 运行引擎</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>组件</th><th>选型</th><th>角色</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Claude Code</strong></td><td><code>claude</code> CLI（≥ 2.1.165）</td><td>Agent 运行时、teammate 协作框架、MCP 通信框架、任务列表</td></tr>
+      <tr><td><strong>Anthropic API</strong></td><td>直连（Claude 模型）</td><td>AI 推理引擎。仅 Claude，不引入其他 LLM</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>6.2 数据源接入</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>数据源</th><th>接入方式</th><th>所需凭据</th><th>使用者</th></tr></thead>
+    <tbody>
+      <tr><td><strong>本地代码仓库</strong></td><td>文件系统直读（Read / Grep / Glob）</td><td>无</td><td>code-analyst</td></tr>
+      <tr><td><strong>本地 Git 历史</strong></td><td>Bash 执行 git log / git blame</td><td>无</td><td>code-analyst + repo-tracer（共享）</td></tr>
+      <tr><td><strong>GitHub 远端仓库</strong></td><td>GitHub Copilot 托管 MCP</td><td>GitHub PAT（每仓独立）</td><td>repo-tracer（独占远端 MCP）</td></tr>
+      <tr><td><strong>Jira</strong></td><td><code>@aashari/mcp-server-atlassian-jira</code>（STDIO MCP）</td><td>API Token + 邮箱 + Site Name</td><td>jira-tracer（只读，仅 jira_get）</td></tr>
+      <tr><td><strong>Obsidian 知识库</strong></td><td>Obsidian CLI + Knowlery 插件</td><td>无</td><td>kb-keeper（独占 KB 读写）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>6.3 知识库组件</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>组件</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Obsidian</strong></td><td>本地 Markdown 知识库应用（桌面版 ≥ 1.7.2）</td></tr>
+      <tr><td><strong>Knowlery 插件</strong></td><td>Obsidian 插件。提供 <code>/ask</code>（检索线索带引用）、<code>/cook</code>（编译结论沉淀）、<code>/explore</code> 等</td></tr>
+      <tr><td><strong>SCHEMA.md</strong></td><td>Knowlery 目录分类注册表：<code>queries/</code>（权威结论）、<code>modules/</code>（模块知识）、<code>entrypoints/</code>（入口点）、<code>concepts/</code>（概念）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>6.4 内置 Skills（分析方法库）</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Skill</th><th>用途</th><th>使用者</th></tr></thead>
+    <tbody>
+      <tr><td><strong>coreng-recognition</strong></td><td>core-ng 框架代码识别规则（REST 入口 / Kafka 入口 / 调用链 / @Inject / Module 模式）</td><td>code-analyst</td></tr>
+      <tr><td><strong>synthesis-core</strong></td><td>综合分析方法库（单一 skill，多 method，覆盖 9 类应用场景）</td><td>synthesizer</td></tr>
+      <tr><td><strong>kb-init</strong></td><td>知识库初始化流程（基于代码仓库 + Jira 自建粗粒度知识库）</td><td>kb-keeper + code-analyst</td></tr>
+      <tr><td><strong>setup-guide</strong></td><td>用户引导 / 配置 skill（探测仓库、生成环境变量清单、按平台输出设置命令）</td><td>用户交互</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>6.5 凭据管理</h3>
+  <div class="callout"><strong>设计原则：零明文落盘。</strong> 任何配置文件只允许 <code>${DMSEEK_*}</code> 环境变量占位。</div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>凭据</th><th>环境变量</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>GitHub Token（每仓）</td><td><code>DMSEEK_GH_TOKEN_&lt;REPO_SLUG_UPPER&gt;</code></td><td>每个 git 仓库一个独立 token；多仓 = 多个变量</td></tr>
+      <tr><td>Jira Site Name</td><td><code>DMSEEK_JIRA_SITE_NAME</code></td><td>Jira 实例域名（如 wonder）</td></tr>
+      <tr><td>Jira Email</td><td><code>DMSEEK_JIRA_EMAIL</code></td><td>Jira 账户邮箱</td></tr>
+      <tr><td>Jira API Token</td><td><code>DMSEEK_JIRA_API_TOKEN</code></td><td>Jira API 访问 Token</td></tr>
+      <tr><td>Obsidian CLI 路径</td><td><code>DMSEEK_OBSIDIAN_CLI</code></td><td>Obsidian 命令行工具路径</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ════════════ 7. 输出产物 ════════════ -->
+<section id="s7">
+  <h2>7. 输出产物</h2>
+  <p class="section-intro">每次查询 dm-seek 交付一份<strong>结构化报告</strong>。</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>组成部分</th><th>内容</th><th>面向读者</th></tr></thead>
+    <tbody>
+      <tr><td><strong>📋 executiveSummary</strong></td><td>纯业务语言的结论摘要。Jira 业务原因与代码高层影响编织为连贯叙事。默认不暴露代码标识。</td><td>PM、非技术角色</td></tr>
+      <tr><td><strong>📁 当前实现状态</strong></td><td>代码现实——相关代码段、模块结构、关键逻辑</td><td>开发、架构</td></tr>
+      <tr><td><strong>🕰️ 演变时间线</strong></td><td>Git 提交历史 + 每个 commit 关联的 Jira 工单号</td><td>全部角色</td></tr>
+      <tr><td><strong>🎯 根因解释</strong></td><td>Jira 工单中的业务原因 + 多工单因果脉络</td><td>全部角色</td></tr>
+      <tr><td><strong>🔗 证据链</strong></td><td>每条结论的出处：代码行号 / commit hash / Jira 工单号</td><td>全部角色</td></tr>
+      <tr><td><strong>📊 置信度</strong></td><td>高（三源齐备且印证）/ 中（缺一源）/ 低（推断为主）</td><td>全部角色</td></tr>
+      <tr><td><strong>⚠️ 偏差注记</strong></td><td>代码 vs KB 描述不一致处（以代码为准）</td><td>开发、架构</td></tr>
+      <tr><td><strong>❓ 未知声明</strong></td><td>证据不足时显式标注缺口（缺哪一源 / 哪一环）</td><td>全部角色</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <strong>🌐 语言：默认中文交付</strong>（含 executiveSummary 中文）。系统支持中英双语，英文版按需 / 附随提供，非默认每次产出。
+  </div>
+</section>
+
+<!-- ════════════ 8. 初始化方式 ════════════ -->
+<section id="s8">
+  <h2>8. 初始化方式</h2>
+
+  <h3>8.1 前置条件</h3>
+  <div class="card-grid">
+    <div class="card"><h4>✅ 必需</h4><p>Claude Code 已安装并登录（<code>claude</code> CLI 可用）<br>Windows 10+ 或 macOS</p></div>
+    <div class="card"><h4>👍 推荐</h4><p>本地 Git 仓库 + Git 完整历史<br>Jira 访问权限</p></div>
+    <div class="card"><h4>🔧 可选</h4><p>Obsidian 已安装（如需知识库功能）</p></div>
+  </div>
+
+  <h3>8.2 导入配置（两步完成）</h3>
+
+  <div class="two-col">
+    <div>
+      <h4>第一步：拷贝配置包</h4>
+      <div class="flow-diagram light">
+你的项目/
+├─ .claude/      ← 拷贝整个目录
+│  ├─ agents/    （7 个 Agent 定义）
+│  ├─ skills/    （4 个分析方法库）
+│  └─ rules/     （运行时规则）
+└─ .mcp.json     ← 拷贝此文件
+                  （MCP 配置）
+      </div>
+      <p style="font-size:13px;color:var(--text-secondary);">💡 只需这两个。<code>docs/</code> 是说明文档，不影响运行。</p>
+    </div>
+    <div>
+      <h4>第二步：配置凭据</h4>
+      <p style="font-size:14px;">运行 <code>claude --agent dongmei-ma</code>，首次启动时告诉系统"帮我配置 dm-seek"——引导 skill（<strong>setup-guide</strong>）会自动：</p>
+      <ol style="font-size:13px;padding-left:18px;color:var(--text-secondary);">
+        <li>探测本地仓库</li>
+        <li>生成 <code>${DMSEEK_*}</code> 环境变量清单</li>
+        <li>按平台（Windows / macOS）输出设置命令</li>
+        <li>你只需<strong>手工将 token / 邮箱填入环境变量</strong></li>
+      </ol>
+    </div>
+  </div>
+
+  <h3>8.3 启动团队</h3>
+  <div class="flow-diagram light">
+  进入claude code后:
+    唤起dm-seek agent team
+  </div>
+  <p>首次启动时 dongmei-ma 自动执行一次性初始化：</p>
+  <ol class="step-list">
+    <li class="step-item">
+      <div class="step-num">1</div>
+      <div class="step-body"><h4>TeamCreate 创建团队 dm-seek</h4><p>在 Claude Code 中注册 7 人 agent team。</p></div>
+    </li>
+    <li class="step-item">
+      <div class="step-num">2</div>
+      <div class="step-body"><h4>按依赖顺序 spawn 6 个 teammate</h4><p>kb-keeper → code-analyst → repo-tracer → jira-tracer → synthesizer → evidence-verifier</p></div>
+    </li>
+    <li class="step-item">
+      <div class="step-num">3</div>
+      <div class="step-body"><h4>每个成员执行自检</h4><p>验证本领域 tools / MCP 就绪状态，就绪后向 dongmei-ma 报到。</p></div>
+    </li>
+    <li class="step-item">
+      <div class="step-num">4</div>
+      <div class="step-body"><h4>就绪门控通过，输出就绪汇总</h4><p>收齐全部 6 人报到后一次性输出状态表。</p></div>
+    </li>
+  </ol>
+
+  <div class="callout success">
+    <strong>✅ 就绪后你将看到：</strong><br>
+    <code>dm-seek 团队已就绪（你正在与协调者 dongmei-ma 对话；后台：kb-keeper ✅ / code-analyst ✅ / repo-tracer ✅ / jira-tracer ✅ / synthesizer ✅ / evidence-verifier ✅）。请输入你的自然语言查询。</code><br><br>
+    若有 ⚠️（某成员自检未全通过）→ 如实列出风险（如"jira-tracer Jira MCP 不可用，溯源无 Jira 源、置信度封顶中"），让你知情决策。
+  </div>
+
+  <h3>8.4 知识库初始化（可选）</h3>
+  <p>如果你的项目还没有 Obsidian 知识库，可运行 <strong>kb-init</strong> skill：</p>
+  <ol style="padding-left:20px;">
+    <li>基于代码仓库的<strong>入口点</strong>（REST API 定义 + Kafka 消费者）自底向上遍历调用链</li>
+    <li>为关键类提取 Git 提交记录 + Jira 工单</li>
+    <li>生成粗粒度知识库（模块 / 入口点 / 核心类 / 业务概念）</li>
+    <li>后续每次查询自动细粒度增量沉淀</li>
+  </ol>
+</section>
+
+<!-- ════════════ 9. 安全与边界 ════════════ -->
+<section id="s9">
+  <h2>9. 安全与边界</h2>
+
+  <h3>9.1 信息源隔离 — 三道防线</h3>
+  <p class="section-intro">dm-seek 的「源独占」依赖三道防线叠加保证，而非单一物理机制。</p>
+
+  <div class="defense-grid">
+    <div class="defense-card">
+      <div class="tier l1">L1 · 技术层</div>
+      <div class="mechanism">🛡️ tools 白名单</div>
+      <div class="purpose">各 Agent <code>tools</code> 精确收口。仅 repo-tracer 含 <code>mcp__github-*</code>，仅 jira-tracer 含 <code>mcp__jira__jira_get</code>（只读），其余 Agent 不含源类 <code>mcp__</code></div>
+    </div>
+    <div class="defense-card">
+      <div class="tier l2">L2 · 声明层</div>
+      <div class="mechanism">📜 边界声明区块</div>
+      <div class="purpose">每个 Agent 定义含「## 职责范围 / ## 允许使用的 MCP 服务 / ## 边界约束」三段固定区块。硬性禁调领域外 mcp__，跨域经消息向 owner 请求</div>
+    </div>
+    <div class="defense-card">
+      <div class="tier l3">L3 · 校验层</div>
+      <div class="mechanism">🔍 运行期审计</div>
+      <div class="purpose">evidence-verifier 校验结论时标记边界违规（结论引用声明范围外的工具 / 来源），运行期兜底</div>
+    </div>
+  </div>
+
+  <h3>9.2 只读政策</h3>
+  <p><strong>所有对代码、GitHub 仓库、Jira 的操作都是只读的。</strong>仅有两个例外：</p>
+  <div class="two-col">
+    <div class="card"><h4>🔄 git fetch</h4><p>拉取远端更新本地仓库（过时判定所需）</p></div>
+    <div class="card"><h4>📝 KB 写操作</h4><p>归 kb-keeper（知识库沉淀）</p></div>
+  </div>
+
+  <h3>9.3 诚实声明</h3>
+  <div class="callout">
+    <strong>🔍 随交付文档发布的诚实声明：</strong>
+    <ul style="margin:8px 0 0 18px;">
+      <li>独占是<strong>策略级约束，不是进程级物理隔离</strong>。MCP 实例在会话层面对全 Team 可见，靠 <code>tools</code> 白名单限制谁能调用</li>
+      <li>per-agent 独占只有 <strong>L1（tools 白名单）一个原生机制</strong>，已通过真实环境运行验证；即便极端情况下 L1 不生效，声明层 + 校验层仍保证边界清晰、可审计</li>
+      <li><strong>凭据零明文</strong>：任何配置文件只允许 <code>${DMSEEK_*}</code> 占位</li>
+    </ul>
+  </div>
+</section>
+
+</div><!-- .container -->
+
+<!-- ════════════ APPENDIX ════════════ -->
+<section style="background:#fff;">
+  <div class="container">
+    <h2>附录：技术特性一览</h2>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th style="width:28%;">特性</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>运行形态</strong></td><td>Claude Code agent team（teammate），7 个平级 Agent</td></tr>
+        <tr><td><strong>启动方式</strong></td><td><code>claude --agent dongmei-ma</code>（自动建团 + 召唤）</td></tr>
+        <tr><td><strong>通信方式</strong></td><td>SendMessage + 共享任务列表（非父子委派）</td></tr>
+        <tr><td><strong>代码识别</strong></td><td>core-ng 框架优先（REST / Kafka 入口、调用链、@Inject / Module 模式），可扩展</td></tr>
+        <tr><td><strong>多仓支持</strong></td><td>每仓库对应独立 GitHub MCP 实例 + 独立 Token；单次查询可横跨多仓</td></tr>
+        <tr><td><strong>双源切换</strong></td><td>本地仓库 vs GitHub MCP 远端，按用户身份自动判定，过时自动询问</td></tr>
+        <tr><td><strong>过时判定</strong></td><td>每段检索到的相关代码，比对本地 vs 远端版本，按代码段询问用户（非全仓）</td></tr>
+        <tr><td><strong>知识自增长</strong></td><td>终局沉淀 <code>queries/</code> + 增量沉淀 <code>modules/</code> / <code>entrypoints/</code></td></tr>
+        <tr><td><strong>降级策略</strong></td><td>最多 2 轮发散返工，仍不足则降级交付并显式声明"证据不足"</td></tr>
+        <tr><td><strong>跨平台</strong></td><td>Windows 10+ / macOS</td></tr>
+        <tr><td><strong>语言</strong></td><td>默认中文交付，英文按需附随</td></tr>
+        <tr><td><strong>凭据管理</strong></td><td>环境变量 <code>${DMSEEK_*}</code>，零明文落盘</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</section>
+
+<footer class="page-footer">
+  <div class="container">
+    <p>dm-seek（马冬梅计划）· 产品介绍 v1.0 · 2026-06-15</p>
+    <p style="margin-top:2px;">基于 PRD v0.4.3 + 技术方案 v1.0 + 用户手册 v1.0</p>
+    <p style="margin-top:2px;font-size:12px;">运行引擎：Claude Code · 仅 Claude（Anthropic API）· Windows / macOS</p>
+  </div>
+</footer>
+
+</body>
+</html>
