@@ -66,23 +66,23 @@
 
 ### §4.1 角色职责清单（首版 7 agent，平级 teammate）
 
-| id | 职责 | 允许的源类 MCP（L1 白名单） | 认证模式 |
-| --- | --- | --- | --- |
-| `dongmei-ma` | 协调者 teammate（类似 tech-lead）：用户接口、解析疑问、拆解派发任务、消息驱动校验返工循环、默认产出中文报告交付；非他人之父、不委派独占下游。**绝不自行为任何 teammate 补位**——成员无响应时走拉回流程（§4.5），不接手任务、不 spawn 替代者 | **无**（不直连任何信息源） | — |
-| `kb-keeper` | 边界唯一 Obsidian KB 读写口：给线索 + 结论沉淀回写；不读源码。集成 = obsidian CLI（search/read/create/append）+ Knowlery `/ask` `/cook` | **无 `mcp__`**（KB 经 obsidian CLI / Knowlery，非 mcp） | — |
-| `code-analyst` | 据 KB 线索定位并解读 core-ng 代码；KB 未命中源码兜底；KB 初始化时遍历入口/调用链；定位映射到具体 repo+模块；态B 经 Bash 直读本地 git 历史作本地 git 证据 | **无 `mcp__`**（本地代码直读 + 本地 git 经 Bash；远端取码/远端历史经 repo-tracer，绝不自连 GitHub MCP） | — |
-| `repo-tracer` | Git/GitHub 网关，**边界独占全部 GitHub MCP 实例（远端）**；远端取码+远端提交历史；统一收口产出提交时间线 `repo_timeline` + 抽工单号；态B 本地 git 信任 code-analyst 提供片段、未附则自取兜底；管理 N 个按仓划分的 GitHub MCP 实例。**双模式**：官方 GitHub plugin (OAuth) 优先、PAT fallback（design-mcp-config-shape §8） | `mcp__github__*`（官方 plugin，只读子集） + `mcp__github-<repoSlug>__*`（PAT fallback）+ 本地 git（经 Bash，**与 code-analyst 共享、非独占**） | Plugin (OAuth) 优先，PAT fallback |
-| `jira-tracer` | 经 Jira MCP 取工单业务原因与多工单因果脉络。**双模式**：官方 Atlassian plugin (OAuth) 优先（server `atlassian`）、PAT fallback（server `jira`） | `mcp__atlassian__*`（官方 plugin，只读子集） + `mcp__jira__jira_get`（PAT fallback，**只读**） | Plugin (OAuth) 优先，PAT fallback |
-| `synthesizer` | 综合 code+git+jira → 结论（9 类场景）；分析方法沉淀为可复用 skill | **无**（仅消费上游三源产物） | — |
-| `evidence-verifier` | 校验每条结论是否挂出处 + 输出置信度 + 边界违规校验 + 不足触发发散返工 | **无**（仅消费上游全部产物） | — |
+| id | 职责 | 允许的源类 MCP（L1 白名单） |
+| --- | --- | --- |
+| `dongmei-ma` | 协调者 teammate（类似 tech-lead）：用户接口、解析疑问、拆解派发任务、消息驱动校验返工循环、默认产出中文报告交付；非他人之父、不委派独占下游。**绝不自行为任何 teammate 补位**——成员无响应时走拉回流程（§4.5），不接手任务、不 spawn 替代者 | **无**（不直连任何信息源） |
+| `kb-keeper` | 边界唯一 Obsidian KB 读写口：给线索 + 结论沉淀回写；不读源码。集成 = obsidian CLI（search/read/create/append）+ Knowlery `/ask` `/cook` | **无 `mcp__`**（KB 经 obsidian CLI / Knowlery，非 mcp） |
+| `code-analyst` | 据 KB 线索定位并解读 core-ng 代码；KB 未命中源码兜底；KB 初始化时遍历入口/调用链；定位映射到具体 repo+模块；态B 经 Bash 直读本地 git 历史作本地 git 证据 | **无 `mcp__`**（本地代码直读 + 本地 git 经 Bash；远端取码/远端历史经 repo-tracer，绝不自连 GitHub MCP） |
+| `repo-tracer` | Git/GitHub 网关，**边界独占 GitHub 官方 Plugin（server `github`）**；远端取码+远端提交历史；统一收口产出提交时间线 `repo_timeline` + 抽工单号；态B 本地 git 信任 code-analyst 提供片段、未附则自取兜底 | `mcp__github__*`（官方 GitHub plugin，只读子集）+ 本地 git（经 Bash，**与 code-analyst 共享、非独占**） |
+| `jira-tracer` | 经 Atlassian 官方 Plugin（server `atlassian`）取工单业务原因与多工单因果脉络 | `mcp__atlassian__*`（官方 Atlassian plugin，只读子集，仅 Jira get/search） |
+| `synthesizer` | 综合 code+git+jira → 结论（9 类场景）；分析方法沉淀为可复用 skill | **无**（仅消费上游三源产物） |
+| `evidence-verifier` | 校验每条结论是否挂出处 + 输出置信度 + 边界违规校验 + 不足触发发散返工 | **无**（仅消费上游全部产物） |
 
 > `design-tracer`（Figma 设计追溯）为二期。
 
 ### §4.2 独占 = 三道防线（属边界约束、非物理隔离）
 
-teammate 形态下 MCP 实例写在共享 `.mcp.json`、**会话层面对全 team 可见**；「独占」靠以下三道防线叠加：
+teammate 形态下 MCP server 由**官方 Claude Code plugin 自行注册**（server `github` / `atlassian`），不落 `.mcp.json`，**会话层面对全 team 可见**；「独占」靠以下三道防线叠加：
 
-1. **L1 技术层（`tools` 白名单）**：各 agent frontmatter `tools` 白名单只含本域工具——**独占对象为远端源类 MCP**：仅 repo-tracer 含 `mcp__github__*`（官方 GitHub plugin 只读子集，OAuth）+ `mcp__github-<repoSlug>__*`（PAT fallback）；仅 jira-tracer 含 `mcp__atlassian__search_issues`/`get_issue`（官方 Atlassian plugin，只读）+ `mcp__jira__jira_get`（PAT fallback，只读）；其余 agent 不含任何源类 `mcp__`。**本地 git 非独占**：code-analyst 与 repo-tracer 均含 `Bash` 以读本地仓 git 历史（态B），本地 git 无远端凭据风险、不在独占范围；GitHub MCP（远端）始终仅 repo-tracer。**per-agent 独占在当前 Claude Code 仅 L1 一个原生机制**（`deniedMcpServers` 是组织/会话级一刀切、无 per-agent 粒度、会误伤，故不挂作兜底）。
+1. **L1 技术层（`tools` 白名单）**：各 agent frontmatter `tools` 白名单只含本域工具——**独占对象为远端源类 MCP**：仅 repo-tracer 含 `mcp__github__*`（官方 GitHub plugin，只读子集）；仅 jira-tracer 含 `mcp__atlassian__*`（官方 Atlassian plugin，只读子集，仅 Jira get/search）；其余 agent 不含任何源类 `mcp__`。**本地 git 非独占**：code-analyst 与 repo-tracer 均含 `Bash` 以读本地仓 git 历史（态B），本地 git 无远端凭据风险、不在独占范围；GitHub MCP（远端）始终仅 repo-tracer。**per-agent 独占在当前 Claude Code 仅 L1 一个原生机制**（`deniedMcpServers` 是组织/会话级一刀切、无 per-agent 粒度、会误伤，故不挂作兜底）。
 2. **声明层（每 agent 固定区块）**：每个 agent 定义含三段固定区块——`## 职责范围` / `## 允许使用的 MCP 服务`（与 L1 白名单一致）/ `## 边界约束`（硬性：禁调领域外 `mcp__`，跨域需求经任务列表 / 消息向 owner agent 请求，绝不直连）。
 3. **校验层（evidence-verifier 运行期兜底）**：校验结论时标记「结论引用了声明范围外工具 / 数据来源」的边界违规。
 
@@ -104,8 +104,8 @@ teammate 形态下 MCP 实例写在共享 `.mcp.json`、**会话层面对全 tea
 具体约束：
 - **代码文件**：所有 agent 对代码文件只读（Read/Grep/Glob），不修改、不创建、不删除任何代码文件。
 - **Git 仓库**：仅允许只读操作（`log`/`diff`/`show`/`cat-file`/`fetch`/`ls-remote`），**严禁** `push`/`commit`/`reset`/`checkout`/`tag`/`rebase`/`stash`/`rm` 等任何改变仓库状态的操作。`fetch` 是唯一例外，通过 `--no-auto-gc`/`--no-tags` 等参数最小化副作用。
-- **Jira**：仅允许 `mcp__atlassian__*`（官方 plugin，只读子集——仅 Jira get/search 工具，不授予 create/update/transition/comment 写工具）+ `mcp__jira__jira_get`（PAT fallback，只读 GET），杜绝任何写/修改工单的操作。
-- **GitHub MCP**：远端 GitHub MCP 调用仅用于取码 + 取提交历史（只读），禁止通过 MCP 创建/修改 PR、issue、comment 等。含官方 GitHub plugin `mcp__github__*` 只读子集——仅取码+历史的 get/search 工具，不授予 create/commit/delete 工具。
+- **Jira**：仅允许 `mcp__atlassian__*`（官方 Atlassian plugin，只读子集——仅 Jira get/search 工具，不授予 create/update/transition/comment 写工具），杜绝任何写/修改工单的操作。
+- **GitHub MCP**：远端 GitHub MCP 调用仅用于取码 + 取提交历史（只读），禁止通过 MCP 创建/修改 PR、issue、comment 等。仅允许 `mcp__github__*`（官方 GitHub plugin，只读子集——仅取码+历史的 get/search 工具，不授予 create/commit/delete 写工具）。
 
 ### §4.5 dongmei-ma 反接管规则（硬约束）
 

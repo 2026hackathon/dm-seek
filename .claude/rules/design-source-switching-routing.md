@@ -7,7 +7,7 @@
 ## 0. 范围与边界
 
 - **管什么**：一次查询命中的代码，来源走本地还是远端 GitHub MCP；远端版本是否比本地新、何时就此询问用户；一次查询横跨多仓时如何把每段代码路由到对的仓库/实例。
-- **不管什么**：MCP 实例命名/token/独占机制（→ `design-mcp-config-shape.md`）；工单号抽取（→ `design-core-ng-recognition.md` §5）；返工循环（→ `design-agent-io-schema-reference.md` §7）。
+- **不管什么**：远端 MCP server 注册/认证/独占机制（→ `design-mcp-config-shape.md`）；工单号抽取（→ `design-core-ng-recognition.md` §5）；返工循环（→ `design-agent-io-schema-reference.md` §7）。
 - **铁律**：过时判定**按被检索到的相关代码段粒度**，**绝不做整仓 diff / 整仓 fetch 比较**。
 
 ---
@@ -42,7 +42,7 @@
 判定「该文件远端是否比本地新」，repo-tracer 在收到 code-analyst 对某 location 的来源探测请求时，对**该文件**执行：
 
 1. **本地侧**：取本地该文件在当前分支的最新提交 sha（等价 `git log -1 --format=%H -- <filePath>`）与 blob hash。
-2. **远端侧**：经该仓对应 `dm-github-<repoSlug>` 实例，取远端默认分支（或用户指定分支）**该文件**的最新 commit sha / blob sha（GitHub contents/commits API 按 path 查询）。
+2. **远端侧**：经 GitHub 官方 Plugin（server `github`，`mcp__github__get_file_contents` / `mcp__github__list_commits`）取远端默认分支（或用户指定分支）**该文件**的最新 commit sha / blob sha。
 3. **比对**：
    - 本地 == 远端 → `staleness = fresh`（态 B）。
    - 本地存在但远端更新（远端有本地没有的、触碰该文件的更晚 commit）→ `staleness = stale`（态 C）。
@@ -123,9 +123,9 @@ code-analyst 定位并权威确定每个 location 的 repo
         │
         ▼
 repo-tracer 按 reposInvolved 路由：
-   每个 repo  ──查 design-mcp-config-shape.md §2.3 映射表──▶
+   每个 repo  ──经 GitHub 官方 Plugin（server `github`）──▶
         ├─ 有本地副本(配置了本地路径)   → 本地 git 操作
-        └─ 配置了 dm-github-<repoSlug> 实例 → 对应 mcp__dm-github-<repoSlug>__* 调用
+        └─ 经 `mcp__github__*` 工具（owner/repo 参数区分仓库）
    一次查询横跨 N 仓 → repo-tracer 对每仓分别取时间线/取码，按 repo 标注合并
         │
         ▼
@@ -136,7 +136,7 @@ repo_timeline.reposCovered  应 == reposInvolved（缺仓=漏仓风险，verifie
 
 - **kb-keeper 的 `repoHint` 仅参考**：KB 线索可能给出候选仓库，但 KB 可能过时/不全，**不作路由权威**。
 - **code-analyst 的 `locations[].repo` 为权威**：以实际代码定位坐实该段属于哪个仓（按 §1 core-ng 模块布局 + 本地/远端实际命中），汇总成 `reposInvolved`。
-- **repo-tracer 据 `reposInvolved` 路由**，逐仓查 §2.3 映射表决定走本地还是哪个 MCP 实例。
+- **repo-tracer 据 `reposInvolved` 路由**：有本地副本走本地 git（Bash），远端经 GitHub 官方 Plugin `mcp__github__*` 工具（owner/repo 参数区分仓库）。
 
 ### 4.3 跨服务隐性调用的漏仓兜底
 
@@ -148,8 +148,8 @@ repo_timeline.reposCovered  应 == reposInvolved（缺仓=漏仓风险，verifie
 
 ### 4.4 仓库未配置的处理
 
-- 若 code-analyst 定位到某 repo，但既无本地副本、也未配置 `dm-github-<repoSlug>` 实例（用户没给该仓 token）→ repo-tracer 标该仓 `unconfigured`，无法取码/取史。
-- dongmei-ma 据此在报告标注「涉及仓库 X 未配置来源，相关证据缺失」，计入缺口；可建议用户经引导 skill 补配该仓（→ `design-mcp-config-shape.md` §6 增量配置）。
+- 若 code-analyst 定位到某 repo，但既无本地副本、GitHub 官方 Plugin 也未认证（`/mcp` OAuth 未授权或 token 过期）→ repo-tracer 标该仓 `unconfigured`，无法取码/取史。
+- dongmei-ma 据此在报告标注「涉及仓库 X 未配置来源，相关证据缺失」，计入缺口；可建议用户 `/plugin install github` + `/mcp` 完成 OAuth 授权。
 
 ---
 

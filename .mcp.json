@@ -1,21 +1,3 @@
 {
-  "mcpServers": {
-    "dm-github-<repoSlug>": {
-      "type": "http",
-      "url": "${DMSEEK_GH_MCP_URL:-https://api.githubcopilot.com/mcp/}",
-      "headers": {
-        "Authorization": "Bearer ${DMSEEK_GH_TOKEN_<REPO_SLUG_UPPER>}"
-      }
-    },
-    "jira": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@aashari/mcp-server-atlassian-jira"],
-      "env": {
-        "ATLASSIAN_SITE_NAME": "${DMSEEK_JIRA_SITE_NAME}",
-        "ATLASSIAN_USER_EMAIL": "${DMSEEK_JIRA_EMAIL}",
-        "ATLASSIAN_API_TOKEN": "${DMSEEK_JIRA_API_TOKEN}"
-      }
-    }
-  }
+  "mcpServers": {}
 }

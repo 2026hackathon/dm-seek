@@ -55,7 +55,7 @@
 | dongmei-ma | 用户疑问/verification/各 agent 产物 | query_plan/final_report/kb_persist_request | 编排层，不直连信息源 |
 | kb-keeper | query_plan/kb_persist_request | kb_clue_set/沉淀确认 | 唯一 KB 读写 |
 | code-analyst | kb_clue_set/code_fetch_response | code_location_set(含 localGitTimeline/kbAlignment/kbIncrement) | 代码内容+态B本地git(Bash，与repo-tracer共享) |
-| repo-tracer | code_location_set/code_fetch_request | repo_timeline(含kbIncrement)/code_fetch_response | 本地Git(共享)/独占远端GitHub MCP（双模式：github-plugin OAuth优先 → github-pat fallback） |
-| jira-tracer | repo_timeline(ticketIdsAll) | jira_reasons(含kbIncrement) | Jira MCP 只读（双模式：atlassian-plugin OAuth优先 → jira-pat fallback） |
+| repo-tracer | code_location_set/code_fetch_request | repo_timeline(含kbIncrement)/code_fetch_response | 本地Git(共享)/独占远端GitHub MCP（github-plugin OAuth） |
+| jira-tracer | repo_timeline(ticketIdsAll) | jira_reasons(含kbIncrement) | Jira MCP 只读（atlassian-plugin OAuth） |
 | synthesizer | code+repo+jira 三源 | synthesis(含executiveSummary) | 上游三源产物 |
 | evidence-verifier | synthesis+全链路产物 | verification(含kbNote/boundaryViolations) | 上游全部产物 |

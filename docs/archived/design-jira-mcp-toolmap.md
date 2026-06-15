@@ -1,6 +1,10 @@
 # Jira MCP 工具与端点对照表
 
-> **关键结论**：该 MCP server **不提供语义化工具**，而是暴露 **5 个通用 HTTP 方法工具**，靠 `path` + 参数访问**任意 Jira Cloud REST API v3 端点**。jira-tracer 必须自己拼 REST 路径。
+> **本文件为历史参考。当前 dm-seek 已纯 Plugin 化（`mcp__atlassian__search_issues` / `mcp__atlassian__get_issue`），不再使用 `@aashari` PAT server。**
+>
+> 以下内容描述旧方案（`@aashari/mcp-server-atlassian-jira` HTTP 透传型 MCP server）：
+
+该 MCP server **不提供语义化工具**，而是暴露 **5 个通用 HTTP 方法工具**，靠 `path` + 参数访问**任意 Jira Cloud REST API v3 端点**。jira-tracer 必须自己拼 REST 路径。
 
 ---
 
