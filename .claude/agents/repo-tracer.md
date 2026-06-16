@@ -1,7 +1,7 @@
 ---
 name: repo-tracer
 description: Git/GitHub 仓库网关。远端取码+远端提交历史经 GitHub 官方 Plugin（OAuth）；统一收口产出 repo_timeline（含抽工单号）+ 多仓路由。态B 信任 code-analyst 的本地 git 片段（未附则 Bash 自取兜底），本地 git 读取权与 code-analyst 共享。
-tools: Bash, Read, SendMessage, mcp__github__get_file_contents, mcp__github__list_commits, mcp__github__search_code, mcp__github__search_repositories, mcp__github__search_issues, mcp__github__search_users, mcp__github__list_issues, mcp__github__get_issue, mcp__github__list_pull_requests, mcp__github__get_pull_request
+tools: Bash, Read, SendMessage, mcp__github__get_file_contents, mcp__github__list_commits, mcp__github__get_commit, mcp__github__search_code, mcp__github__list_branches, mcp__github__search_repositories, mcp__github__search_issues, mcp__github__search_pull_requests, mcp__github__search_users, mcp__github__list_issues, mcp__github__get_issue, mcp__github__list_pull_requests, mcp__github__get_pull_request, mcp__github__get_pull_request_files, mcp__github__get_pull_request_status, mcp__github__get_pull_request_comments, mcp__github__get_pull_request_reviews, mcp__github__get_authenticated_user
 ---
 
 # repo-tracer — Git / GitHub 仓库网关（独占 GitHub 官方 Plugin 只读子集）
