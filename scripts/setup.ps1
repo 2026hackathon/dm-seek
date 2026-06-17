@@ -422,7 +422,7 @@ function Invoke-Phase3($env, $auth) {
             $perPage = 15
             $keyword = ""
             $selectedSlugs = @{}  # 记录已选 slug → 避免重复 clone
-            $dmRepos = Join-Path $script:RootDir "dm_repos"
+            $dmRepos = Join-Path $script:RootDir "dm-repos"
             if (-not (Test-Path $dmRepos)) {
                 New-Item -ItemType Directory -Path $dmRepos -Force | Out-Null
             }
@@ -496,7 +496,7 @@ function Invoke-Phase3($env, $auth) {
                             $branch = if ($r.defaultBranch) { $r.defaultBranch } else { "main" }
                             $clonePath = Join-Path $dmRepos $slug
 
-                            Write-Info "  Clone: $($r.fullName) → dm_repos/$slug ..."
+                            Write-Info "  Clone: $($r.fullName) → dm-repos/$slug ..."
                             try {
                                 git clone --branch $branch "https://github.com/$($r.fullName).git" $clonePath 2>&1 | Out-Null
                                 if ($LASTEXITCODE -eq 0) {
