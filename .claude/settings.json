@@ -4,7 +4,6 @@
   },
   "defaultShell": "powershell",
   "enabledPlugins": {
-    "github@claude-plugins-official": true,
     "atlassian@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {

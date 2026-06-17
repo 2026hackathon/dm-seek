@@ -55,7 +55,6 @@ mcp__atlassian__search_issues(jql="project=DELI AND status=Done", maxResults=20)
 - **changelog / comments 不再需要独立端点**——`get_issue` 返回值已含
 - OAuth token 由 Claude Code keychain 管理，jira-tracer 无需处理凭据
 
-> 旧方案（`@aashari/mcp-server-atlassian-jira` HTTP 透传 + PAT）已废弃，`.mcp.json` 已清空，全部走官方 plugin。
 
 ### 2.1 Plugin 返回值 → `jira_reasons` 契约字段映射
 
@@ -69,7 +68,7 @@ mcp__atlassian__search_issues(jql="project=DELI AND status=Done", maxResults=20)
 
 ## 边界声明（软隔离层，强制）
 
-> L1 tools 白名单屏蔽机制已通过运行验证；本声明层为第二道边界，配合 evidence-verifier 出处校验保边界可审计。独占为策略级（tools 白名单）、非物理隔离。
+> L1 tools 白名单——独占依赖 L2 声明层 + L3 evidence-verifier 校验构成软边界。
 
 ## 职责范围
 经 Atlassian 官方 Plugin（OAuth，只读子集：`search_issues` + `get_issue`）取工单业务原因与多工单因果脉络。
@@ -118,4 +117,3 @@ mcp__atlassian__search_issues(jql="project=DELI AND status=Done", maxResults=20)
 - 每条 `{from:"jira-tracer", namespace(建议 modules/<repoSlug>/<module> 或 entrypoints/<repoSlug>), kind, summary(中文一句), detail, evidence(jira 出处)}`。
 > **绝不自写 KB**——`kbIncrement` 仅是产物字段上报，写库唯一收口 kb-keeper（终局归并而非边跑边写，保独占 + 防竞态）。本次无值得沉淀增量则省略。
 
-> 契约依据：`.claude/rules/design-agent-io-schema-reference.md`（§2.6/§2.10）、`.claude/rules/design-jira-mcp-toolmap.md`（§2 端点 / §2.1 工具 I/O 对照 / §3 env）。

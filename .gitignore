@@ -2,3 +2,4 @@
 .idea/
 
 .mcp.json
+.claude/settings.local.json

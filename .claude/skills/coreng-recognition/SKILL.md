@@ -1,11 +1,11 @@
----
+﻿---
 name: coreng-recognition
 description: core-ng 框架代码识别规则集（单一权威规则文件）——REST 入口(WebService 接口 + Controller 两形态)、Kafka 入口(MessageHandler + bindSubscribe)、调用链(@Inject → Service → Repository/MongoCollection → Domain)、存储双形态、工单号格式、扫描排除。供 code-analyst 定位 core-ng 代码时引用。识别以目标仓库实际标志为准、官方约定作补充印证。当需要在 core-ng 仓库里识别入口/调用链/存储/角色时使用。
 ---
 
 # coreng-recognition — core-ng 识别规则（集中维护、单文件可扩展）
 
-> 本 skill 是 core-ng 识别规则的**单一权威载体**，内容固化自 `.claude/rules/design-core-ng-recognition.md`（已对样本仓 `hdr-delivery-project` 实地核验）。code-analyst 定位代码时引用本规则；扩展到其他框架时**只新增规则段 + 新增 `coreNgRole` 枚举**，不改契约、不散落到各 agent。
+> 本 skill 是 core-ng 识别规则的**单一权威载体**。code-analyst 定位代码时引用本规则；扩展到其他框架时**只新增规则段 + 新增 `coreNgRole` 枚举**，不改契约、不散落到各 agent。
 >
 > **总则（runtime-spec §10 双重落地）**：识别**以目标仓库实际代码标志为准**，官方 wiki 约定作补充印证；当官方约定与实际不符，以实际为准。每条规则均给出「实际标志」与「样本出处」两栏。
 
@@ -162,4 +162,3 @@ ticket:
 | ④ | WebServiceImpl 在 `{service}/web/` | 实为 `app.{domain}.{subdomain}.web` | 以 `implements *WebService` 为主判据 |
 | ⑤ | 未提排除 | `frontend/node_modules`、`build/` 须排除；`utility/` 库非入口 | `exclude_paths` + 入口遍历仅 backend 服务 |
 
-> 权威依据：`.claude/rules/design-core-ng-recognition.md`（含逐条样本出处与 5 项偏离点）、`.claude/rules/design-agent-io-schema-reference.md` §6.1（coreNgRole 枚举）、团队记忆 `hdr-delivery-coreng-markers`。

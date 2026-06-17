@@ -1,49 +1,56 @@
-// 占位模板 — 共享 .mcp.json（agent team teammate 形态）
-// 规则见 ../design-mcp-config-shape.md。
+// MCP server 配置骨架（共享 `.mcp.json`）
 //
 // teammate 形态要点：
-//   - OAuth 路径（推荐，有浏览器）：官方 GitHub Plugin 自行注册 server `github`，
-//     不落此 .mcp.json。用户通过 /plugin install github → /mcp Authenticate 完成 OAuth。
-//   - PAT 路径（备选，无浏览器/headless）：在下方 mcpServers 中添加 `github` 条目，
-//     token 用环境变量占位 ${DMSEEK_GH_TOKEN_<REPO_SLUG_UPPER>}，绝不写明文。
-//   - 两条路径互斥——同一 server 名 `github`，官方 Plugin 优先级高于 .mcp.json。
-//     若已安装官方 Plugin，.mcp.json 中的 `github` 条目会被静默忽略。
-//   - 独占靠各 agent 的 tools 白名单（见 ./agent-tools-allowlist.placeholder.md），
-//     官方 plugin 注册的 mcp__github__* / mcp__atlassian__* 工具同样受白名单管辖。
-//   - 不走 agent frontmatter 内联——teammate 形态下 frontmatter 的 mcpServers 被忽略。
+//   - GitHub 双轨：路径A gh-mcp OAuth（推荐）+ 路径B Copilot MCP PAT（备选），互斥二选一
+//   - Jira：Atlassian Plugin（/plugin install atlassian@claude-plugins-official → /mcp OAuth 授权）
+//   - 独占靠各 agent 的 tools 白名单
+//   - 不走 agent frontmatter 内联——teammate 形态下 frontmatter 的 mcpServers 被忽略
 {
   "mcpServers": {
-    // --- OAuth 路径（推荐）---
-    // 官方 GitHub Plugin：/plugin install github → /mcp Authenticate
-    //   server 名: github  工具前缀: mcp__github__*
-    //   凭据: Claude Code keychain（加密存储，零明文）
-    //   无需在此添加任何条目——Plugin 自行注册。
-    //
-    // 官方 Atlassian Plugin：/plugin install atlassian → /mcp Authenticate
-    //   server 名: atlassian  工具前缀: mcp__atlassian__*
-    //   凭据: Claude Code keychain（加密存储，零明文）
-    //   无需在此添加任何条目——Plugin 自行注册。
+    // ============================================================
+    // GitHub 双轨认证：互斥二选一（同一 server 名 "github"）
+    // ============================================================
 
-    // --- PAT 路径（备选，headless / 无浏览器场景）---
-    // 使用前请确认：官方 GitHub Plugin 未安装（/plugin list 无 github），
-    // 否则 Plugin 会覆盖 .mcp.json 中的同 server 名条目。
-    //
-    // GitHub Copilot 托管 MCP 配置示例（取消下方注释并替换 <REPO_SLUG_UPPER>）：
+    // --- 路径A：gh-mcp OAuth（推荐，有浏览器）---
+    // 使用 gh CLI 扩展 shuymn/gh-mcp，通过 gh auth login 浏览器 OAuth 认证
+    // 安装 gh CLI：winget install --id GitHub.cli (Win) / brew install gh (macOS)
+    // 登录：gh auth login → HTTPS → Login with a web browser（支持公司 SSO）
+    // 安装扩展：gh extension install shuymn/gh-mcp
+    // 无需手动创建 PAT——gh CLI 的 OAuth token 由 keyring 管理
+    "github": {
+      "command": "gh",
+      "args": ["mcp"],
+      "env": {
+        "GITHUB_READ_ONLY": "1"
+      }
+    }
+
+    // --- 路径B：Copilot MCP + PAT（备选，headless/无浏览器）---
+    // 使用 GitHub Copilot 托管 MCP，通过 GITHUB_TOKEN PAT 环境变量认证
+    // PAT 要求：classic token，scope 勾选 repo（+ read:org 如需组织访问）
+    // Org repo：在 GitHub token 页面点击 Configure SSO 授权对应 org
+    // 切换方式：注释上方路径A条目，取消下方路径B条目的注释
     //
     // "github": {
-    //   "type": "url",
-    //   "url": "https://api.githubcopilot.com/mcp/",
+    //   "type": "http",
+    //   "url": "https://api.githubcopilot.com/mcp",
     //   "headers": {
-    //     "Authorization": "Bearer ${DMSEEK_GH_TOKEN_<REPO_SLUG_UPPER>}"
+    //     "Authorization": "Bearer ${GITHUB_TOKEN}",
+    //     "X-MCP-Readonly": "true"
     //   }
     // }
-    //
-    // Token 绝不明文落此文件——必须使用环境变量占位 ${DMSEEK_GH_TOKEN_*}。
-    // 环境变量设置方式（防终端历史泄漏）：
-    //   Windows（推荐）：
-    //     $token = Read-Host -Prompt "请粘贴 GitHub PAT" -MaskInput
-    //     [Environment]::SetEnvironmentVariable("DMSEEK_GH_TOKEN_<REPO_SLUG>", $token, "User")
-    //   macOS/Linux：
-    //     read -s -p "请粘贴 GitHub PAT: " token && export DMSEEK_GH_TOKEN_<REPO_SLUG>=$token
+
+    // --- Atlassian (Jira) ---
+    // 官方 Atlassian Plugin：/plugin install atlassian@claude-plugins-official → /mcp Authenticate
+    // server 名: atlassian  工具前缀: mcp__atlassian__*
+    // 无需在此添加条目——Plugin 自行注册
   }
 }
+
+// === 路径B 环境变量设置（防终端历史泄漏） ===
+//   Windows PowerShell：
+//     $token = Read-Host -Prompt "请粘贴 GitHub PAT" -MaskInput
+//     [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", $token, "User")
+//     重启终端使变量生效
+//   macOS/Linux：
+//     read -s -p "请粘贴 GitHub PAT: " token && export GITHUB_TOKEN=$token
