@@ -6,9 +6,12 @@ description: 马冬梅计划开箱引导/配置——双轨 GitHub 认证（gh-m
 # setup-guide — 开箱引导 / 配置（跨 Win/macOS）
 
 > GitHub 提供两条认证路径，凭据零明文。
+>
+> **Windows 用户**：可直接运行 `scripts/setup.ps1` 一键初始化（右键 "使用 PowerShell 运行"），自动完成环境探测、认证引导、仓库 Clone、配置生成。macOS 用户继续参照本文手动步骤。
 
 ## 何时用
 - 首次导入 dm-seek 配置包；或新增 git 仓库 / 补配凭据 / 配置 Jira。
+- Windows 用户优先用 `scripts/setup.ps1`，本文为参考手册。
 
 ## 探测/手填界线（硬性）
 - **可自动探测（非敏感）**：本地仓库路径、`git remote get-url origin` 推断的 repoSlug、平台与默认 shell、obsidian CLI 二进制位置、vault 路径。
