@@ -251,23 +251,37 @@ function Invoke-Phase2($env) {
             }
         }
 
-        # gh auth login
-        Write-Info "正在启动 gh auth login（将打开浏览器）..."
-        Write-Info "请选择: GitHub.com → HTTPS → Login with a web browser"
-        & $env.GhPath auth login --hostname github.com --git-protocol https --web
-        if ($LASTEXITCODE -ne 0) {
-            Write-ErrorMsg "gh auth login 失败，请检查网络或重试"
-            exit 1
-        }
-        Write-Success "GitHub 认证完成"
-
-        # 安装 gh-mcp 扩展
-        Write-Info "正在安装 gh-mcp 扩展..."
-        & $env.GhPath extension install shuymn/gh-mcp 2>$null
+        # gh auth login（已认证则跳过）
+        Write-Info "检查 gh 认证状态..."
+        $alreadyAuthed = $false
+        & $env.GhPath auth status 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "gh-mcp 扩展安装完成"
+            Write-Success "  gh 已认证，跳过登录步骤"
+            $alreadyAuthed = $true
         } else {
-            Write-Warn "gh-mcp 扩展安装可能失败，请手动执行: gh extension install shuymn/gh-mcp"
+            Write-Info "  未认证，正在启动 gh auth login（将打开浏览器）..."
+            Write-Info "  请选择: GitHub.com → HTTPS → Login with a web browser"
+            & $env.GhPath auth login --hostname github.com --git-protocol https --web
+            if ($LASTEXITCODE -ne 0) {
+                Write-ErrorMsg "gh auth login 失败，请检查网络或重试"
+                exit 1
+            }
+            Write-Success "GitHub 认证完成"
+        }
+
+        # 安装 gh-mcp 扩展（已安装则跳过）
+        Write-Info "检查 gh-mcp 扩展..."
+        $extList = & $env.GhPath extension list 2>$null | Out-String
+        if ($extList -match "shuymn/gh-mcp") {
+            Write-Success "  gh-mcp 扩展已安装，跳过"
+        } else {
+            Write-Info "  正在安装 gh-mcp 扩展..."
+            & $env.GhPath extension install shuymn/gh-mcp 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "  gh-mcp 扩展安装完成"
+            } else {
+                Write-Warn "  gh-mcp 扩展安装可能失败，请手动执行: gh extension install shuymn/gh-mcp"
+            }
         }
 
     } else {
