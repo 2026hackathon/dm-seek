@@ -398,75 +398,122 @@ function Invoke-Phase3($env, $auth) {
             Write-Warn "远端仓库浏览需要 gh CLI + OAuth 认证"
             Write-Warn "当前认证模式: $($auth.Mode)，跳过远端仓库"
         } else {
-            Write-Info "列出你权限范围内的仓库..."
             $ghPath = $env.GhPath
+
+            # 确定范围
             Write-Info "  输入 GitHub org 名浏览组织仓库，或回车浏览个人仓库："
             $org = Read-Host "  Org（回车=个人）"
-
-            $query = ""
+            $baseQuery = ""
             if ($org) {
-                $query = "org:$org"
+                $baseQuery = "org:$org"
             } else {
                 try {
                     $me = & $ghPath api user -q ".login" 2>$null
-                    if ($me) { $query = "user:$me" }
+                    if ($me) { $baseQuery = "user:$me" }
                 } catch { }
             }
+            if (-not $baseQuery) {
+                Write-Warn "无法确定搜索范围，跳过远端仓库"
+                return $repos
+            }
 
-            if ($query) {
-                Write-Info "  正在搜索仓库（可能需要几秒）..."
+            # 交互式浏览循环
+            $page = 1
+            $perPage = 15
+            $keyword = ""
+            $selectedSlugs = @{}  # 记录已选 slug → 避免重复 clone
+            $dmRepos = Join-Path $script:RootDir "dm_repos"
+            if (-not (Test-Path $dmRepos)) {
+                New-Item -ItemType Directory -Path $dmRepos -Force | Out-Null
+            }
+
+            while ($true) {
+                # 构建搜索查询
+                $searchQuery = $baseQuery
+                if ($keyword) { $searchQuery = "$baseQuery $keyword in:name,description" }
+
+                Write-Info "`n  搜索: $searchQuery  [第 $page 页]"
                 $repoList = @()
+                $totalCount = 0
                 try {
-                    $result = & $ghPath search repos "$query" --limit 50 --json fullName,description,defaultBranch 2>$null
+                    $apiUrl = "search/repositories?q=$([uri]::EscapeDataString($searchQuery))&per_page=$perPage&page=$page&sort=updated"
+                    $result = & $ghPath api $apiUrl --jq ".items[] | {fullName: .full_name, description: .description, defaultBranch: .default_branch}" 2>$null
+                    $totalJson = & $ghPath api $apiUrl --jq ".total_count" 2>$null
+                    if ($totalJson) { $totalCount = [int]$totalJson }
                     if ($result) {
-                        $json = $result | ConvertFrom-Json
-                        $repoList = $json
+                        $repoList = $result | ConvertFrom-Json
+                        if ($repoList -isnot [array]) { $repoList = @($repoList) }
                     }
-                } catch { }
+                } catch {
+                    Write-Warn "  搜索请求失败，请检查网络或 gh 认证状态"
+                }
 
-                if ($repoList.Count -gt 0) {
-                    Write-Info "  找到 $($repoList.Count) 个仓库："
-                    for ($i = 0; $i -lt [Math]::Min($repoList.Count, 30); $i++) {
+                if ($repoList.Count -eq 0) {
+                    Write-Warn "  本页无结果"
+                    $page = [Math]::Max(1, $page - 1)
+                } else {
+                    $totalPages = [Math]::Ceiling($totalCount / $perPage)
+                    Write-Info "  共 $totalCount 个仓库，第 $page/$totalPages 页："
+                    Write-Info "  ─────────────────────────────────────────────"
+                    for ($i = 0; $i -lt $repoList.Count; $i++) {
                         $r = $repoList[$i]
-                        Write-Info "    [$($i+1)] $($r.fullName) — $($r.description)"
+                        $idx = $i + 1
+                        $mark = if ($selectedSlugs.ContainsKey(($r.fullName -split "/")[1])) { " [已选]" } else { "" }
+                        $desc = if ($r.description) { " — $($r.description)" } else { "" }
+                        if ($desc.Length -gt 80) { $desc = $desc.Substring(0, 77) + "..." }
+                        Write-Info "    [$idx]$mark $($r.fullName)$desc"
                     }
-                    Write-Info "  输入编号(逗号分隔)选择要 clone 的仓库，或回车跳过"
-                    $sel = Read-Host "  >"
-                    if ($sel) {
-                        $nums = $sel -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "^\d+$" }
-                        $dmRepos = Join-Path $script:RootDir "dm_repos"
-                        if (-not (Test-Path $dmRepos)) {
-                            New-Item -ItemType Directory -Path $dmRepos -Force | Out-Null
-                        }
-                        foreach ($n in $nums) {
-                            $idx = [int]$n - 1
-                            if ($idx -ge 0 -and $idx -lt $repoList.Count) {
-                                $r = $repoList[$idx]
-                                $slug = ($r.fullName -split "/")[1]
-                                $owner = ($r.fullName -split "/")[0]
-                                $branch = if ($r.defaultBranch) { $r.defaultBranch } else { "main" }
-                                $clonePath = Join-Path $dmRepos $slug
+                    Write-Info "  ─────────────────────────────────────────────"
+                }
 
-                                Write-Info "Clone: $($r.fullName) → dm_repos/$slug ..."
-                                try {
-                                    git clone --branch $branch "https://github.com/$($r.fullName).git" $clonePath 2>&1 | Out-Null
-                                    if ($LASTEXITCODE -eq 0) {
-                                        $repos[$slug] = @{
-                                            local = @{ path = (Resolve-Path $clonePath).Path }
-                                            remote = @{ owner = $owner; repo = $slug; branch = $branch }
-                                        }
-                                        Write-Success "  $slug clone 完成"
-                                    } else {
-                                        Write-Warn "  $slug clone 失败（权限不足或网络问题）"
+                # 操作菜单
+                Write-Info ""
+                Write-Info "  [#] 输入编号(逗号分隔) clone 仓库   [N] 下一页   [P] 上一页"
+                Write-Info "  [S] 搜索关键词                       [D] 完成"
+                $cmd = Read-Host "  >"
+
+                if ($cmd -eq "D" -or $cmd -eq "d") {
+                    break
+                } elseif ($cmd -eq "N" -or $cmd -eq "n") {
+                    if ($page -lt $totalPages) { $page++ } else { Write-Warn "  已是最后一页" }
+                } elseif ($cmd -eq "P" -or $cmd -eq "p") {
+                    if ($page -gt 1) { $page-- } else { Write-Warn "  已是第一页" }
+                } elseif ($cmd -eq "S" -or $cmd -eq "s") {
+                    $keyword = Read-Host "  搜索关键词（回车清除）"
+                    $page = 1  # 新搜索从第1页开始
+                } elseif ($cmd -match "^\d") {
+                    $nums = $cmd -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "^\d+$" }
+                    foreach ($n in $nums) {
+                        $idx = [int]$n - 1
+                        if ($idx -ge 0 -and $idx -lt $repoList.Count) {
+                            $r = $repoList[$idx]
+                            $slug = ($r.fullName -split "/")[1]
+                            $owner = ($r.fullName -split "/")[0]
+                            if ($selectedSlugs.ContainsKey($slug)) {
+                                Write-Warn "  $slug 已选择，跳过"
+                                continue
+                            }
+                            $branch = if ($r.defaultBranch) { $r.defaultBranch } else { "main" }
+                            $clonePath = Join-Path $dmRepos $slug
+
+                            Write-Info "  Clone: $($r.fullName) → dm_repos/$slug ..."
+                            try {
+                                git clone --branch $branch "https://github.com/$($r.fullName).git" $clonePath 2>&1 | Out-Null
+                                if ($LASTEXITCODE -eq 0) {
+                                    $repos[$slug] = @{
+                                        local = @{ path = (Resolve-Path $clonePath).Path }
+                                        remote = @{ owner = $owner; repo = $slug; branch = $branch }
                                     }
-                                } catch {
-                                    Write-Warn "  $slug clone 失败: $_"
+                                    $selectedSlugs[$slug] = $true
+                                    Write-Success "    $slug clone 完成"
+                                } else {
+                                    Write-Warn "    $slug clone 失败（权限不足或网络问题）"
                                 }
+                            } catch {
+                                Write-Warn "    $slug clone 失败: $_"
                             }
                         }
                     }
-                } else {
-                    Write-Warn "  未找到仓库（检查 gh auth status 或 org 权限）"
                 }
             }
         }
