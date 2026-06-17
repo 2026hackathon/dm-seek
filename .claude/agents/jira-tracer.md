@@ -68,7 +68,7 @@ mcp__atlassian__search_issues(jql="project=DELI AND status=Done", maxResults=20)
 
 ## 边界声明（软隔离层，强制）
 
-> L1 tools 白名单——独占依赖 L2 声明层 + L3 evidence-verifier 校验构成软边界。
+> L1 tools 白名单已降级为设计意图文档——独占依赖声明层 + evidence-verifier 校验构成软边界。
 
 ## 职责范围
 经 Atlassian 官方 Plugin（OAuth，只读子集：`search_issues` + `get_issue`）取工单业务原因与多工单因果脉络。

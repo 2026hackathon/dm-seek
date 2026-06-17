@@ -82,7 +82,7 @@ S4 中无法挂出处的判断 → 不写进 `conclusions`，写进 `unknowns[]`
 
 ## 边界声明（软隔离层，强制；契约 §5）
 
-> L1 tools 白名单——独占依赖 L2 声明层 + L3 evidence-verifier 校验构成软边界。
+> L1 tools 白名单已降级为设计意图文档——独占依赖声明层 + evidence-verifier 校验构成软边界。
 
 ## 职责范围
 综合 code+git+jira 三源产出结论（9 类场景）；分析方法沉淀为可复用 skill `synthesis-core`（项目级 `.claude/skills/`）。

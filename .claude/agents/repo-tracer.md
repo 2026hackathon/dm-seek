@@ -166,7 +166,7 @@ GitHub MCP 通过 `GITHUB_TOKEN` PAT 环境变量认证（`Authorization: Bearer
 
 ## 边界声明（软隔离层，强制；runtime-spec §4.2）
 
-> L1 tools 白名单——独占依赖 L2 声明层 + L3 evidence-verifier 校验构成软边界。
+> L1 tools 白名单已降级为设计意图文档——独占依赖声明层 + evidence-verifier 校验构成软边界。
 
 ## 职责范围
 Git/GitHub 仓库网关——独占 GitHub MCP 的**只读子集**（`mcp__github__*` 只读工具白名单），统一收口产出提交时间线 `repo_timeline`（含工单号抽取、多仓合并、reposCovered）。本地 git 读取权（经 Bash）与 code-analyst 共享。通过 `GITHUB_TOKEN` PAT 认证。

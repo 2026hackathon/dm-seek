@@ -19,25 +19,24 @@
    - GitHub 路径 A：`gh` CLI keyring 管理 OAuth token，零配置文件
    - GitHub 路径 B：`${GITHUB_TOKEN}` PAT 环境变量，`.mcp.json` 仅含变量占位
    - Jira：Claude Code keychain（OAuth）
-4. **诚实声明**：「源独占 = L1 工具白名单 + L2 声明区块 + evidence-verifier 兜底」——MCP server 在会话层对全 team 可见，靠白名单 + 声明约束谁能调用。
+4. **诚实声明**：MCP server 在会话层对全 team 可见。「独占」= 声明层（每 agent 边界声明区块）+ 校验层（evidence-verifier 兜底）构成软边界。L1 tools 白名单在 agent body > ~40 行时不生效（2026-06-16 qa-engineer 实证），已降级为设计意图文档——不依赖引擎强制。
 
 ---
 
 ## 1. 独占授权机制
 
-### 1.1 独占机制：双层边界 + 兜底
+### 1.1 独占机制：软边界（两防线）
 
 | 层 | 机制 | 作用 |
 | --- | --- | --- |
-| L1 工具白名单（主、承重） | 各 agent `tools` 字段精确列出其可用 `mcp__` 工具（本域）；非授权 agent 不列 | 逐 agent 独占的技术手段（teammate 形态下 `tools` 生效） |
-| L2 声明区块（强制规范） | 每个 agent 的 description/system prompt **必须含固定声明区块**（职责范围 / 允许使用的 MCP 服务 / 边界约束硬性） | 行为层强约束 + 跨域走消息/任务列表请求 owner，不直调领域外 MCP |
-| 兜底 | evidence-verifier 校验 | 结论出处校验兜底——越域取数/无出处会被校验拦截 |
+| 声明层（主防线之一） | 各 agent `tools` 字段精确列出其可用 `mcp__` 工具（本域），作为设计意图文档；每 agent **必须含固定声明区块**（职责范围 / 允许使用的 MCP 服务 / 边界约束硬性） | 逐 agent 独占的声明约束 + 行为规范——跨域走消息/任务列表请求 owner，不直调领域外 MCP |
+| 校验层（主防线之二） | evidence-verifier 校验 | 结论出处校验兜底——越域取数/无出处会被校验拦截 |
 
-> **L1 为承重技术防线、L2 为行为规范**。不引入 `deniedMcpServers`（会误伤）。
+> **v0.4.4 更新**：L1 tools 白名单在 agent body > ~40 行时不生效（2026-06-16 qa-engineer 用 CLI 2.1.177 实证，dm-seek 全部 7 agent body 均超此阈值）。白名单保留作为设计意图文档，不依赖引擎强制——实在防线为声明层 + 校验层。不引入 `deniedMcpServers`（会误伤）。
 
 ### 1.2 强制声明区块
 
-每个 agent 定义除 L1 `tools` 白名单外，**必须在 description/system prompt 加入固定声明区块**：
+每个 agent 定义除 `tools` 白名单（设计意图文档）外，**必须在 description/system prompt 加入固定声明区块**：
 
 ```
 ## 职责范围

@@ -31,7 +31,7 @@ tools: Read, Bash, Skill, SendMessage
 
 ## 边界声明（软隔离层，强制；runtime-spec §4.2 / 契约 §5）
 
-> L1 tools 白名单——独占依赖 L2 声明层 + L3 evidence-verifier 校验构成软边界。
+> L1 tools 白名单已降级为设计意图文档——独占依赖声明层 + evidence-verifier 校验构成软边界。
 
 ## 职责范围
 唯一 KB 读写口——给溯源线索（`/ask`）+ 结论沉淀回 `queries/`（`/cook`）。KB 读写唯一收口于你，不读源码（`citation` 只含 KB 内部引用）。

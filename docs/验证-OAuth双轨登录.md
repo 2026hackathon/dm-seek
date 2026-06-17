@@ -99,13 +99,13 @@
 
 ## S3. 回归检查
 
-### S3.1 独占机制（L1 白名单 + L2 声明区块）
+### S3.1 独占机制（声明层 + 白名单）
 
 | 检查点 | 预期 | 实际 | 判定 |
 |--------|------|------|------|
 | repo-tracer L1 白名单仅含 `mcp__github__*` + Bash/Read/SendMessage | 只读子集 18 工具 | frontmatter L4 精确 18 个 `mcp__github__*` 只读工具，不含写工具 | PASS |
-| repo-tracer L2 声明区块 | 含「职责范围 / 允许 MCP / 边界约束」三区块 | repo-tracer L88-L103：三区块完整 | PASS |
-| 声明区块与 L1 白名单一致 | 声明写「仅 GitHub Plugin 只读子集」 | L91「仅 GitHub 官方 Plugin 的只读子集——`mcp__github__*`」 | PASS |
+| repo-tracer 声明区块 | 含「职责范围 / 允许 MCP / 边界约束」三区块 | repo-tracer L88-L103：三区块完整 | PASS |
+| 声明区块与白名单一致 | 声明写「仅 GitHub Plugin 只读子集」 | L91「仅 GitHub 官方 Plugin 的只读子集——`mcp__github__*`」 | PASS |
 | 声明区块含"不调 `mcp__atlassian__*`" | 明确禁止跨域 | L92「不调 `mcp__atlassian__*`（归 jira-tracer）」 | PASS |
 
 ### S3.2 其他 agent 未被改动
@@ -178,7 +178,7 @@
 
 - 3 实现产物与设计文档 v1.2 一致（setup-guide 双轨、MCP 模板、repo-tracer 18 工具白名单）
 - 安全铁律三红线全守：防终端历史泄漏、零明文 token、PAT 引导中 skill 不接触 token
-- 独占机制（L1 白名单 + L2 声明区块）未被破坏，其他 6 agent 定义零波及
+- 独占机制（声明层 + 白名单）未被破坏，其他 6 agent 定义零波及
 - `gh` CLI 从功能路径彻底移除，仅保留否定声明注释
 - Jira plugin 引导未被改动
 - OAuth live 流程、PAT live 流程、PAT 路径工具差异清单诚实标注为「待部署环境验证」

@@ -519,7 +519,7 @@ evidence-verifier 校验每条结论是否挂着 `代码/commit/工单` 出处 +
 | `gaps[].whichConclusion` | string | 必填 | 关联到哪条结论 |
 | `gaps[].detail` | string | 必填 | 缺口细节（降级交付时直接呈现给用户） |
 | `divergeHints` | array<enum> | 必填 | **发散重派建议项**，取值自 §7.3 可枚举清单；`verdict=sufficient` 时为空 |
-| `boundaryViolations` | array<object> | 必填 | **三道防线校验层的运行期可审计兜底输出**：标记引用了产出方「允许使用的 MCP 服务」声明范围外数据来源的结论；无违规时为空数组 `[]`。命中则该结论置信度**下调**并记入 `gaps`（见 `evidence-verifier.md` §C） |
+| `boundaryViolations` | array<object> | 必填 | **软边界校验层的运行期可审计兜底输出**：标记引用了产出方「允许使用的 MCP 服务」声明范围外数据来源的结论；无违规时为空数组 `[]`。命中则该结论置信度**下调**并记入 `gaps`（见 `evidence-verifier.md` §C） |
 | `boundaryViolations[].whichConclusion` | string | 必填 | 越界结论标识（关联到 `perConclusion[].statement`） |
 | `boundaryViolations[].detail` | string | 必填 | 越界详情：该结论引用的数据来源落在产出方「允许使用的 MCP 服务」声明范围外 |
 | `kbNote` | string | 可选 | **KB 可信度注记**（来自 code-analyst 的 `code_location_set.kbAlignment`）。当 `kbAlignment.verdict ∈ {stale, contradicted, partial}` 时，verifier 在此**仅作记录**「本次 KB 线索与实际代码有偏差（KB 可能过时），结论已以代码为锚坐实」。**红线（必须遵守）：KB 陈旧 / 偏差 ≠ 结论证据不足——不触发 `verdict=insufficient`、不下调 `confidence`、不进 `gaps`、不触发返工**；KB 偏差只说明 KB 旧了、本次靠源码而非靠 KB 坐实，结论本身的三源充分性独立判定。 |

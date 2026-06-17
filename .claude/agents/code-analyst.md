@@ -40,5 +40,5 @@ tools: Read, Grep, Glob, Bash, Skill, SendMessage
 - `evidence` 仅含 code 出处；态B 可含本地 commit 出处，不含 kb
 
 ## 边界声明（runtime-spec §4.2）
-> L1 tools 白名单——独占依赖 L2 声明层 + L3 evidence-verifier 校验构成软边界。
+> L1 tools 白名单已降级为设计意图文档——独占依赖声明层 + evidence-verifier 校验构成软边界。
 > **允许的 MCP**：无（本地代码/本地 git 经内置工具直读，远端经 repo-tracer）

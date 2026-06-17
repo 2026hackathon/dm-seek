@@ -19,7 +19,7 @@
 
 注意事项：
 - 工具引用名 `mcp__<serverName>__<toolName>`，整服务前缀 `mcp__<serverName>`。server 名为 `github` / `atlassian`（双下划线 `__` 分隔）。
-- **L2 强制声明区块（每个 agent 必含）**：除上表 L1 白名单外，每个 agent 的 description/system prompt 必须含固定声明区块（职责范围 / 允许使用的 MCP 服务 / 边界约束硬性「禁调领域外 mcp__、跨域经消息/任务列表请求 owner」）。
-- **独占口径**：L1 白名单 + L2 声明区块 + evidence-verifier 兜底；**不挂 `deniedMcpServers`**（非 per-agent、会误伤）。
+- **声明区块（每个 agent 必含）**：每个 agent 的 description/system prompt 必须含固定声明区块（职责范围 / 允许使用的 MCP 服务 / 边界约束硬性「禁调领域外 mcp__、跨域经消息/任务列表请求 owner」）。
+- **独占口径（v0.4.4）**：声明层 + 校验层（evidence-verifier 兜底）；L1 tools 白名单已降级为设计意图文档（body > ~40 行时不生效）；**不挂 `deniedMcpServers`**（非 per-agent、会误伤）。
 - GitHub：`官方 GitHub MCP` 通过 `.mcp.json` command 类型配置（server `github`）；Jira：Atlassian Plugin 自行注册（server `atlassian`）。repo-tracer 的 tools 白名单含 `mcp__github__*`（只读子集）；jira-tracer 的 tools 白名单含 `mcp__atlassian__*`（只读子集）。
 - MCP server 暴露的工具集含写操作（create/update/delete/comment 等），dm-seek 必须在白名单中精标只读子集——不授予任何写工具。
