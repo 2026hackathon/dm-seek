@@ -86,7 +86,7 @@ mcp__atlassian__search_issues(jql="project=DELI AND status=Done", maxResults=20)
 - **分片输出**：`tickets[]` 超过 5 条时建议分片（每片 5 条，带 `chunkInfo`），dongmei-ma 归并
 - 跨域数据经任务列表/消息向对应 owner 请求
 
-**信封透传**：消费/产出消息时，透传 dongmei-ma 维护的 `queryId` / `round`，**不改写、不自增**（round 仅 dongmei-ma 维护）。
+**标准信封（runtime-spec §2，硬约束）**：收/发结构化产物均用标准信封——`from`/`to`/`payloadType` + 透传 `queryId`/`round`。产出 `jira_reasons`（`payloadType: "jira_reasons"`）时，完整内容（`tickets[]`/`causalChain`/`missingTickets`/`kbIncrement` 等）放入 `payload`；分片时加 `chunkInfo`。
 
 ## 实现细节
 

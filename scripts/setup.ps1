@@ -9,8 +9,11 @@
 #Requires -Version 5.1
 
 $ErrorActionPreference = "Stop"
-$script:RootDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-if (-not $script:RootDir) { $script:RootDir = Get-Location }
+# RootDir = 项目根目录。如果脚本在 scripts/ 子目录下，取上一级；否则取脚本自身所在目录。
+$script:RootDir = $PSScriptRoot
+if ((Split-Path -Leaf $script:RootDir) -eq "scripts") {
+    $script:RootDir = Split-Path -Parent $script:RootDir
+}
 $script:RootDir = (Resolve-Path $script:RootDir).Path
 
 # ============================================================
@@ -63,14 +66,13 @@ function Read-MaskedInput($prompt) {
 # ============================================================
 
 function Invoke-Phase1 {
-    Write-Banner "Phase 1/5: 环境探测"
+    Write-Banner "Phase 1/6: 环境探测"
 
     $env = @{
         GitFound = $false
         GhFound = $false
         GhPath = $null
         ObsidianPath = $null
-        LocalRepos = @()
         WingetAvailable = $false
     }
 
@@ -146,59 +148,6 @@ function Invoke-Phase1 {
         Write-Warn "  Obsidian CLI 未找到（不影响核心功能，KB 功能需手动配置）"
     }
 
-    # --- 本地 git 仓库扫描 ---
-    Write-Info "[扫描] 本地 git 仓库..."
-    $scanDirs = @()
-    Write-Info "  请输入要扫描的目录（多个用逗号分隔，直接回车跳过）："
-    $userInput = Read-Host "  >"
-    if ($userInput) {
-        $scanDirs += ($userInput -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    }
-    # 追加常见开发目录
-    $commonDirs = @(
-        "$env:USERPROFILE\dev", "$env:USERPROFILE\projects",
-        "D:\dev", "D:\dev_repository", "D:\projects",
-        "C:\dev", "C:\projects"
-    )
-    foreach ($d in $commonDirs) {
-        if ((Test-Path $d) -and ($scanDirs -notcontains $d)) {
-            $scanDirs += $d
-        }
-    }
-    foreach ($dir in $scanDirs) {
-        if (-not (Test-Path $dir)) { continue }
-        Write-Info "  扫描 $dir ..."
-        $gitDirs = Get-ChildItem $dir -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName ".git") }
-        foreach ($gd in $gitDirs) {
-            $remoteUrl = $null
-            $branch = $null
-            try {
-                $remoteUrl = (git -C $gd.FullName remote get-url origin 2>$null)
-                $branch = (git -C $gd.FullName branch --show-current 2>$null)
-            } catch { }
-            if ($remoteUrl) {
-                $slug = [System.IO.Path]::GetFileName($gd.FullName)
-                $ownerRepo = ""
-                if ($remoteUrl -match "github\.com[:/](.+)/(.+?)(\.git)?$") {
-                    $ownerRepo = "$($Matches[1])/$($Matches[2])"
-                }
-                $env.LocalRepos += @{
-                    Path = $gd.FullName
-                    Slug = $slug
-                    RemoteUrl = $remoteUrl
-                    OwnerRepo = $ownerRepo
-                    Branch = if ($branch) { $branch } else { "main" }
-                }
-                Write-Success "    发现: $slug ($ownerRepo) [$branch]"
-            }
-        }
-    }
-    if ($env.LocalRepos.Count -eq 0) {
-        Write-Warn "  未发现本地 git 仓库"
-    } else {
-        Write-Success "  共发现 $($env.LocalRepos.Count) 个本地仓库"
-    }
-
     Write-Info ""
     return $env
 }
@@ -208,104 +157,116 @@ function Invoke-Phase1 {
 # ============================================================
 
 function Invoke-Phase2($env) {
-    Write-Banner "Phase 2/5: GitHub 认证"
-
-    $choice = $null
-
-    if ($env.GhFound) {
-        Write-Info "检测到 gh CLI 已安装。请选择认证方式："
-        Write-Info "  [A] gh-mcp OAuth（推荐）——浏览器 OAuth 认证，零 PAT"
-        Write-Info "  [B] PAT ——手动创建 Personal Access Token，适合 headless/无浏览器"
-        while ($choice -notin @("A","B","a","b")) {
-            $choice = Read-Host "请输入 A 或 B"
-        }
-    } else {
-        Write-Warn "gh CLI 未安装。请选择认证方式："
-        Write-Info "  [A] 自动安装 gh CLI → OAuth 认证（推荐）"
-        Write-Info "  [B] 使用 PAT（无需安装 gh CLI，适合 headless）"
-        while ($choice -notin @("A","B","a","b")) {
-            $choice = Read-Host "请输入 A 或 B"
-        }
-    }
+    Write-Banner "Phase 2/6: GitHub 认证"
 
     $auth = @{ Mode = ""; PAT = $null }
 
-    if ($choice -in @("A","a")) {
-        $auth.Mode = "oauth"
+    # ---- 路径 A: gh CLI + OAuth（自动检测，优先） ----
+    Write-Info "[路径 A] gh CLI + OAuth"
+    $oauthReady = $false
 
-        # 安装 gh CLI（如未安装）
-        if (-not $env.GhFound) {
-            if ($env.WingetAvailable) {
-                Write-Info "正在通过 winget 安装 GitHub CLI..."
-                if (-not (Install-WingetPackage "GitHub.cli" "GitHub CLI")) {
-                    Write-ErrorMsg "gh CLI 安装失败，请手动安装: https://cli.github.com"
-                    Write-Info "或重新运行脚本选择路径 B (PAT)"
-                    exit 1
-                }
+    # 安装 gh CLI（如未安装）
+    if (-not $env.GhFound) {
+        if ($env.WingetAvailable) {
+            Write-Info "  gh CLI 未安装，通过 winget 自动安装..."
+            if (Install-WingetPackage "GitHub.cli" "GitHub CLI") {
                 $env.GhFound = $true
                 $env.GhPath = "gh"
+                Write-Success "  gh CLI 安装完成"
             } else {
-                Write-ErrorMsg "winget 不可用，请手动安装 gh CLI: https://cli.github.com"
-                Write-Info "或重新运行脚本选择路径 B (PAT)"
-                exit 1
+                Write-Warn "  gh CLI 自动安装失败"
             }
+        } else {
+            Write-Warn "  gh CLI 未安装且 winget 不可用，路径 A 不可用"
         }
+    } else {
+        Write-Success "  gh CLI 已安装: $($env.GhPath)"
+    }
 
-        # gh auth login（已认证则跳过）
-        Write-Info "检查 gh 认证状态..."
-        $alreadyAuthed = $false
+    # 认证 + 扩展安装
+    if ($env.GhFound) {
         & $env.GhPath auth status 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "  gh 已认证，跳过登录步骤"
-            $alreadyAuthed = $true
+            Write-Success "  gh 已认证"
         } else {
-            Write-Info "  未认证，正在启动 gh auth login（将打开浏览器）..."
+            Write-Info "  gh 未认证，启动 gh auth login（将打开浏览器）..."
             Write-Info "  请选择: GitHub.com → HTTPS → Login with a web browser"
             & $env.GhPath auth login --hostname github.com --git-protocol https --web
-            if ($LASTEXITCODE -ne 0) {
-                Write-ErrorMsg "gh auth login 失败，请检查网络或重试"
-                exit 1
-            }
-            Write-Success "GitHub 认证完成"
-        }
-
-        # 安装 gh-mcp 扩展（已安装则跳过）
-        Write-Info "检查 gh-mcp 扩展..."
-        $extList = & $env.GhPath extension list 2>$null | Out-String
-        if ($extList -match "shuymn/gh-mcp") {
-            Write-Success "  gh-mcp 扩展已安装，跳过"
-        } else {
-            Write-Info "  正在安装 gh-mcp 扩展..."
-            & $env.GhPath extension install shuymn/gh-mcp 2>$null
             if ($LASTEXITCODE -eq 0) {
-                Write-Success "  gh-mcp 扩展安装完成"
+                Write-Success "  gh 认证完成"
             } else {
-                Write-Warn "  gh-mcp 扩展安装可能失败，请手动执行: gh extension install shuymn/gh-mcp"
+                Write-Warn "  gh auth login 失败"
             }
         }
 
-    } else {
-        $auth.Mode = "pat"
-
-        Write-Info ""
-        Write-Info "=== 创建 GitHub Personal Access Token ===" -ForegroundColor Yellow
-        Write-Info "1. 打开: https://github.com/settings/tokens → Generate new token (classic)"
-        Write-Info "2. Note: dm-seek"
-        Write-Info "3. Scope: repo（只读）+ read:org（如需组织访问）"
-        Write-Info "4. 点击 Generate → 复制 token"
-        Write-Info ""
-        $pat = Read-MaskedInput "请粘贴 GitHub PAT（输入不显示）："
-        if (-not $pat) {
-            Write-ErrorMsg "PAT 不能为空，已退出"
-            exit 1
+        # 认证成功后安装 gh-mcp 扩展
+        & $env.GhPath auth status 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $extList = & $env.GhPath extension list 2>$null | Out-String
+            if ($extList -match "shuymn/gh-mcp") {
+                Write-Success "  gh-mcp 扩展已安装"
+            } else {
+                Write-Info "  安装 gh-mcp 扩展..."
+                & $env.GhPath extension install shuymn/gh-mcp 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "  gh-mcp 扩展安装完成"
+                } else {
+                    Write-Warn "  gh-mcp 扩展安装失败，请手动: gh extension install shuymn/gh-mcp"
+                }
+            }
+            $oauthReady = $true
         }
-        $auth.PAT = $pat
+    }
 
-        # 写入用户环境变量
-        [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", $pat, "User")
-        $env:GITHUB_TOKEN = $pat
-        Write-Success "GITHUB_TOKEN 已写入用户环境变量"
-        Write-Warn "注意：需重启终端使环境变量对所有进程生效"
+    if ($oauthReady) {
+        $auth.Mode = "oauth"
+        Write-Success "  [路径 A] OAuth 就绪"
+        Write-Info ""
+        return $auth
+    }
+
+    # ---- 路径 B: PAT（路径 A 不可用时的兜底） ----
+    Write-Info ""
+    Write-Info "[路径 B] Personal Access Token"
+    $existingPAT = $env:GITHUB_TOKEN
+    if (-not $existingPAT) {
+        # 检查用户环境变量
+        $existingPAT = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN", "User")
+    }
+    if ($existingPAT) {
+        Write-Success "  GITHUB_TOKEN 已设置"
+        $auth.Mode = "pat"
+        $auth.PAT = $existingPAT
+        Write-Info ""
+        return $auth
+    }
+
+    # ---- A/B 都不满足，引导用户 ----
+    Write-Warn "  路径 A（gh CLI + OAuth）不可用，路径 B（GITHUB_TOKEN）未设置"
+    Write-Info ""
+    Write-Info "  请选择以下方式之一配置 GitHub 认证："
+    Write-Info ""
+    Write-Info "  [A] 安装 gh CLI + OAuth 认证"
+    Write-Info "      下载: https://cli.github.com → 安装 → 终端运行 gh auth login"
+    Write-Info "      然后重新运行本脚本"
+    Write-Info ""
+    Write-Info "  [B] 创建 Personal Access Token（无需 gh CLI）"
+    Write-Info "      1. 打开: https://github.com/settings/tokens → Generate new token (classic)"
+    Write-Info "      2. Note: dm-seek  |  Scope: repo（只读）+ read:org（按需）"
+    Write-Info "      3. 生成后运行: setx GITHUB_TOKEN <你的token>"
+    Write-Info "      4. 重启终端，重新运行本脚本"
+    Write-Info ""
+    $manual = Read-Host "  或现在输入 PAT（回车跳过退出）"
+    if ($manual) {
+        $auth.Mode = "pat"
+        $auth.PAT = $manual
+        [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", $manual, "User")
+        $env:GITHUB_TOKEN = $manual
+        Write-Success "  GITHUB_TOKEN 已写入用户环境变量"
+        Write-Warn "  注意：需重启终端使环境变量对所有进程生效"
+    } else {
+        Write-ErrorMsg "GitHub 认证未配置，已退出。请按上述指引配置后重新运行。"
+        exit 1
     }
 
     Write-Info ""
@@ -317,7 +278,7 @@ function Invoke-Phase2($env) {
 # ============================================================
 
 function Invoke-Phase3($env, $auth) {
-    Write-Banner "Phase 3/5: 仓库配置"
+    Write-Banner "Phase 3/6: 仓库配置"
 
     $repos = @{}
 
@@ -346,47 +307,119 @@ function Invoke-Phase3($env, $auth) {
     }
 
     # --- 路径 A: 本地仓库 ---
-    if ($env.LocalRepos.Count -gt 0) {
-        Write-Info "发现 $($env.LocalRepos.Count) 个本地仓库："
-        for ($i = 0; $i -lt $env.LocalRepos.Count; $i++) {
-            $r = $env.LocalRepos[$i]
-            $mark = if ($repos.ContainsKey($r.Slug)) { "[已配置]" } else { "" }
-            Write-Info "  [$($i+1)] $($r.Slug) — $($r.OwnerRepo) [$($r.Branch)] $mark"
-        }
-        Write-Info "  [A] 全部添加"
-        Write-Info "  [回车] 跳过本地仓库"
-        $sel = Read-Host "输入编号(逗号分隔)、A 全部添加、或回车跳过"
-
-        if ($sel -eq "A" -or $sel -eq "a") {
-            foreach ($r in $env.LocalRepos) {
-                $repos[$r.Slug] = @{
-                    local = @{ path = $r.Path }
-                    remote = @{
-                        owner = ($r.OwnerRepo -split "/")[0]
-                        repo = ($r.OwnerRepo -split "/")[1]
-                        branch = $r.Branch
+    Write-Info "是否需要扫描本地目录查找 git 仓库？[Y/N]"
+    $wantScan = Read-Host "(Y=是 / N=否)"
+    if ($wantScan -eq "Y" -or $wantScan -eq "y") {
+        $scanDirs = @(
+            "$env:USERPROFILE\dev", "$env:USERPROFILE\projects",
+            "D:\dev", "D:\dev_repository", "D:\projects",
+            "C:\dev", "C:\projects"
+        )
+        $foundRepos = @()
+        foreach ($dir in $scanDirs) {
+            if (-not (Test-Path $dir)) { continue }
+            Write-Info "  扫描 $dir ..."
+            $gitDirs = Get-ChildItem $dir -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName ".git") }
+            foreach ($gd in $gitDirs) {
+                $remoteUrl = $null; $branch = $null
+                try {
+                    $remoteUrl = (git -C $gd.FullName remote get-url origin 2>$null)
+                    $branch = (git -C $gd.FullName branch --show-current 2>$null)
+                } catch { }
+                if ($remoteUrl) {
+                    $slug = Split-Path -Leaf $gd.FullName
+                    $ownerRepo = ""
+                    if ($remoteUrl -match "github\.com[:/](.+)/(.+?)(\.git)?$") {
+                        $ownerRepo = "$($Matches[1])/$($Matches[2])"
+                    }
+                    $foundRepos += @{
+                        Path = $gd.FullName
+                        Slug = $slug
+                        OwnerRepo = $ownerRepo
+                        Branch = if ($branch) { $branch } else { "main" }
                     }
                 }
             }
-            Write-Success "已添加全部 $($env.LocalRepos.Count) 个仓库"
-        } elseif ($sel) {
-            $nums = $sel -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "^\d+$" }
-            foreach ($n in $nums) {
-                $idx = [int]$n - 1
-                if ($idx -ge 0 -and $idx -lt $env.LocalRepos.Count) {
-                    $r = $env.LocalRepos[$idx]
-                    $repos[$r.Slug] = @{
-                        local = @{ path = $r.Path }
-                        remote = @{
-                            owner = ($r.OwnerRepo -split "/")[0]
-                            repo = ($r.OwnerRepo -split "/")[1]
-                            branch = $r.Branch
+        }
+        if ($foundRepos.Count -gt 0) {
+            Write-Info "  发现 $($foundRepos.Count) 个仓库："
+            for ($i = 0; $i -lt $foundRepos.Count; $i++) {
+                $r = $foundRepos[$i]
+                $mark = if ($repos.ContainsKey($r.Slug)) { "[已配置]" } else { "" }
+                Write-Info "    [$($i+1)] $($r.Slug) — $($r.OwnerRepo) [$($r.Branch)] $mark"
+            }
+            Write-Info "    [A] 全部添加"
+            Write-Info "    [回车] 跳过"
+            $sel = Read-Host "  输入编号(逗号分隔)、A 全部添加、或回车跳过"
+            if ($sel -eq "A" -or $sel -eq "a") {
+                foreach ($r in $foundRepos) {
+                    if (-not $repos.ContainsKey($r.Slug)) {
+                        $repos[$r.Slug] = @{
+                            local = @{ path = $r.Path }
+                            remote = @{
+                                owner = ($r.OwnerRepo -split "/")[0]
+                                repo = ($r.OwnerRepo -split "/")[1]
+                                branch = $r.Branch
+                            }
                         }
                     }
-                    Write-Success "已添加: $($r.Slug)"
+                }
+                Write-Success "  已添加全部"
+            } elseif ($sel) {
+                $nums = $sel -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "^\d+$" }
+                foreach ($n in $nums) {
+                    $idx = [int]$n - 1
+                    if ($idx -ge 0 -and $idx -lt $foundRepos.Count) {
+                        $r = $foundRepos[$idx]
+                        if (-not $repos.ContainsKey($r.Slug)) {
+                            $repos[$r.Slug] = @{
+                                local = @{ path = $r.Path }
+                                remote = @{
+                                    owner = ($r.OwnerRepo -split "/")[0]
+                                    repo = ($r.OwnerRepo -split "/")[1]
+                                    branch = $r.Branch
+                                }
+                            }
+                            Write-Success "    已添加: $($r.Slug)"
+                        }
+                    }
                 }
             }
+        } else {
+            Write-Warn "  未发现本地 git 仓库"
         }
+    }
+
+    # --- 路径 A-2: 手动输入 ---
+    Write-Info "是否手动添加本地仓库？[Y/N]"
+    $wantManual = Read-Host "(Y=是 / N=否)"
+    while ($wantManual -eq "Y" -or $wantManual -eq "y") {
+        $localPath = Read-Host "输入本地仓库路径（回车跳过）"
+        if (-not $localPath) { break }
+        if (-not (Test-Path (Join-Path $localPath ".git"))) {
+            Write-Warn "  不是 git 仓库，请重新输入"
+            continue
+        }
+        $slug = Split-Path -Leaf $localPath
+        $remoteUrl = (git -C $localPath remote get-url origin 2>$null)
+        $branch = (git -C $localPath branch --show-current 2>$null)
+        $owner = ""
+        $repo = $slug
+        if ($remoteUrl -match "github\.com[:/](.+)/(.+?)(\.git)?$") {
+            $owner = $Matches[1]
+            $repo = $Matches[2]
+        }
+        $repos[$slug] = @{
+            local = @{ path = (Resolve-Path $localPath).Path }
+            remote = @{
+                owner = $owner
+                repo = $repo
+                branch = if ($branch) { $branch } else { "main" }
+            }
+        }
+        Write-Success "  已添加: $slug ($owner/$repo) [$branch]"
+        Write-Info "继续添加？[Y/N]"
+        $wantManual = Read-Host "(Y=是 / N=否)"
     }
 
     # --- 路径 B: 远端仓库 ---
@@ -394,10 +427,24 @@ function Invoke-Phase3($env, $auth) {
     Write-Info "是否需要从远端浏览并 Clone 仓库？[Y/N]"
     $wantRemote = Read-Host "(Y=是 / N=否)"
     if ($wantRemote -eq "Y" -or $wantRemote -eq "y") {
-        if (-not $env.GhFound -or $auth.Mode -ne "oauth") {
-            Write-Warn "远端仓库浏览需要 gh CLI + OAuth 认证"
-            Write-Warn "当前认证模式: $($auth.Mode)，跳过远端仓库"
+        # 判断 gh CLI 是否可用且有认证（OAuth 或 PAT 均可）
+        $ghAvailable = $false
+        if (-not $env.GhFound) {
+            Write-Warn "gh CLI 未安装，跳过远端仓库浏览"
+        } elseif ($auth.Mode -eq "oauth") {
+            & $env.GhPath auth status 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $ghAvailable = $true
+            } else {
+                Write-Warn "gh 认证状态异常，跳过远端仓库浏览。请运行: gh auth login"
+            }
         } else {
+            # PAT 模式：Phase 2 已设置 GITHUB_TOKEN，gh CLI 可直接使用
+            $env:GITHUB_TOKEN = $auth.PAT
+            $ghAvailable = $true
+        }
+
+        if ($ghAvailable) {
             $ghPath = $env.GhPath
 
             # 确定范围
@@ -414,20 +461,18 @@ function Invoke-Phase3($env, $auth) {
             }
             if (-not $baseQuery) {
                 Write-Warn "无法确定搜索范围，跳过远端仓库"
-                return $repos
-            }
+            } else {
+                # 交互式浏览循环
+                $page = 1
+                $perPage = 15
+                $keyword = ""
+                $selectedSlugs = @{}  # 记录已选 slug → 避免重复 clone
+                $dmRepos = Join-Path $script:RootDir "dm-repos"
+                if (-not (Test-Path $dmRepos)) {
+                    New-Item -ItemType Directory -Path $dmRepos -Force | Out-Null
+                }
 
-            # 交互式浏览循环
-            $page = 1
-            $perPage = 15
-            $keyword = ""
-            $selectedSlugs = @{}  # 记录已选 slug → 避免重复 clone
-            $dmRepos = Join-Path $script:RootDir "dm-repos"
-            if (-not (Test-Path $dmRepos)) {
-                New-Item -ItemType Directory -Path $dmRepos -Force | Out-Null
-            }
-
-            while ($true) {
+                while ($true) {
                 # 构建搜索查询
                 $searchQuery = $baseQuery
                 if ($keyword) { $searchQuery = "$baseQuery $keyword in:name,description" }
@@ -498,8 +543,45 @@ function Invoke-Phase3($env, $auth) {
 
                             Write-Info "  Clone: $($r.fullName) → dm-repos/$slug ..."
                             try {
-                                git clone --branch $branch "https://github.com/$($r.fullName).git" $clonePath 2>&1 | Out-Null
-                                if ($LASTEXITCODE -eq 0) {
+                                # PAT 模式用 token 认证，OAuth 模式走 gh CLI keyring
+                                $cloneUrl = if ($auth.Mode -eq "pat" -and $auth.PAT) {
+                                    "https://$($auth.PAT)@github.com/$($r.fullName).git"
+                                } else {
+                                    "https://github.com/$($r.fullName).git"
+                                }
+                                # 后台 job 运行 clone，主线程解析进度画进度条
+                                $job = Start-Job -ScriptBlock {
+                                    param($url, $branch, $path)
+                                    git clone --branch $branch $url $path --progress 2>&1
+                                } -ArgumentList $cloneUrl, $branch, $clonePath
+                                $percent = 0
+                                while ($job.State -eq "Running") {
+                                    $latest = Receive-Job $job 2>$null | Select-Object -Last 1
+                                    if ($latest -match '(\d+)%') { $percent = [int]$Matches[1] }
+                                    $barLen = [Math]::Floor($percent / 2.5)
+                                    $bar = "[" + ("#" * $barLen) + (" " * (40 - $barLen)) + "]"
+                                    Write-Host "`r  Clone $bar $percent%" -NoNewline
+                                    Start-Sleep -Milliseconds 200
+                                }
+                                # 收尾
+                                $allOutput = Receive-Job $job 2>$null
+                                Remove-Job $job -Force
+                                if ($percent -ge 100) { $percent = 100 }
+                                $barLen = [Math]::Floor($percent / 2.5)
+                                $bar = "[" + ("#" * $barLen) + (" " * (40 - $barLen)) + "]"
+                                Write-Host "`r  Clone $bar 100%"
+                                # 检查结果：从输出中找错误
+                                $exitCode = 0
+                                $allOutput | ForEach-Object {
+                                    if ($_ -match "^fatal:") { $exitCode = 1; Write-Warn "    $_" }
+                                }
+                                if ($auth.PAT -and $allOutput) {
+                                    $allOutput | ForEach-Object {
+                                        $line = $_ -replace [regex]::Escape($auth.PAT), "***"
+                                        if ($line -match "^fatal:" -or $line -match "^error:") { Write-Warn "    $line" }
+                                    }
+                                }
+                                if ($exitCode -eq 0) {
                                     $repos[$slug] = @{
                                         local = @{ path = (Resolve-Path $clonePath).Path }
                                         remote = @{ owner = $owner; repo = $slug; branch = $branch }
@@ -515,6 +597,7 @@ function Invoke-Phase3($env, $auth) {
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -533,11 +616,197 @@ function Invoke-Phase3($env, $auth) {
 }
 
 # ============================================================
-# Phase 4: 配置生成
+# Phase 4: KB Vault 初始化
 # ============================================================
 
-function Invoke-Phase4($auth) {
-    Write-Banner "Phase 4/5: 配置生成"
+function Invoke-Phase4($repos) {
+    Write-Banner "Phase 4/6: KB Vault 初始化"
+
+    if ($repos.Count -eq 0) {
+        Write-Warn "  repos.json 无仓库，跳过 vault 初始化"
+        Write-Info ""
+        return
+    }
+
+    $kbDir = Join-Path $script:RootDir "dm-kbs"
+    if (-not (Test-Path $kbDir)) {
+        New-Item -ItemType Directory -Path $kbDir -Force | Out-Null
+    }
+
+    # ---- 下载 Knowlery 插件（所有 vault 共享一份） ----
+    $knowleryCache = Join-Path $kbDir ".knowlery-cache"
+    $knowleryReady = $false
+    if (-not (Test-Path $knowleryCache)) {
+        Write-Info "  下载 Knowlery 插件..."
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/JayJiangCT/knowlery/releases/latest" -TimeoutSec 15
+            New-Item -ItemType Directory -Path $knowleryCache -Force | Out-Null
+            foreach ($file in @("main.js", "manifest.json", "styles.css")) {
+                $asset = $release.assets | Where-Object { $_.name -eq $file }
+                if ($asset) {
+                    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile (Join-Path $knowleryCache $file) -TimeoutSec 30
+                }
+            }
+            # 验证三文件齐全
+            $allOk = $true
+            foreach ($f in @("main.js", "manifest.json", "styles.css")) {
+                if (-not (Test-Path (Join-Path $knowleryCache $f))) { $allOk = $false; break }
+            }
+            if ($allOk) {
+                $knowleryReady = $true
+                Write-Success "  Knowlery 插件下载完成"
+            } else {
+                Write-Warn "  Knowlery 下载不完整，将跳过自动安装"
+            }
+        } catch {
+            Write-Warn "  Knowlery 下载失败（网络原因或 GitHub 不可达）: $_"
+        }
+    } else {
+        $knowleryReady = $true
+        Write-Info "  Knowlery 插件缓存已存在"
+    }
+
+    # ---- 注册到 Obsidian ----
+    $obsidianConfig = Join-Path $env:APPDATA "obsidian\obsidian.json"
+    $obsidianAvailable = Test-Path $obsidianConfig
+    $registeredCount = 0
+    if ($obsidianAvailable) {
+        try {
+            $config = Get-Content $obsidianConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+            $vaults = [ordered]@{}
+            if ($config.vaults) {
+                $config.vaults.PSObject.Properties | ForEach-Object {
+                    $vaults[$_.Name] = $_.Value
+                }
+            }
+            $configSaved = $false
+
+            foreach ($slug in $repos.Keys) {
+                $vaultPath = Join-Path $kbDir "${slug}_kb"
+                $already = $false
+                foreach ($v in $vaults.Values) {
+                    $p = if ($v.path) { $v.path } else { $v.Path }
+                    if ($p -eq $vaultPath) { $already = $true; break }
+                }
+                if (-not $already) {
+                    $vid = [Guid]::NewGuid().ToString("N").Substring(0, 16)
+                    $vaults[$vid] = [PSCustomObject]@{
+                        path = $vaultPath
+                        ts   = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
+                        open = $false
+                    }
+                    $registeredCount++
+                    $configSaved = $true
+                }
+            }
+
+            if ($configSaved) {
+                $config.vaults = $vaults
+                $config | ConvertTo-Json -Depth 10 | Out-File -FilePath $obsidianConfig -Encoding UTF8 -Force
+            }
+        } catch {
+            Write-Warn "  Obsidian 注册失败: $_"
+        }
+    }
+
+    # ---- 逐仓库创建 vault ----
+    $created = @()
+    $skipped = @()
+    foreach ($slug in $repos.Keys) {
+        $vaultPath = Join-Path $kbDir "${slug}_kb"
+        $obsidianDir = Join-Path $vaultPath ".obsidian"
+        $initMarker = Join-Path $vaultPath ".obsidian\.dmseek-init"
+
+        if (Test-Path $initMarker) {
+            $skipped += $slug
+            continue
+        }
+
+        # vault 骨架
+        if (-not (Test-Path $obsidianDir)) {
+            New-Item -ItemType Directory -Path $obsidianDir -Force | Out-Null
+        }
+        @{} | ConvertTo-Json | Out-File -FilePath (Join-Path $obsidianDir "app.json") -Encoding UTF8 -Force
+
+        # 安装 Knowlery 插件
+        if ($knowleryReady) {
+            $pluginDir = Join-Path $obsidianDir "plugins\knowlery"
+            if (-not (Test-Path $pluginDir)) {
+                New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
+                Copy-Item (Join-Path $knowleryCache "main.js") $pluginDir -Force
+                Copy-Item (Join-Path $knowleryCache "manifest.json") $pluginDir -Force
+                Copy-Item (Join-Path $knowleryCache "styles.css") $pluginDir -Force
+            }
+        }
+
+        # 预写 community-plugins.json
+        @("knowlery") | ConvertTo-Json | Out-File -FilePath (Join-Path $obsidianDir "community-plugins.json") -Encoding UTF8 -Force
+
+        # 标记已初始化
+        "setup.ps1 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $initMarker -Encoding UTF8 -Force
+        $created += $slug
+    }
+
+    # ---- 回写 kb 路径到 repos.json ----
+    if ($created.Count -gt 0) {
+        $reposPath = Join-Path $script:RootDir ".claude\repos.json"
+        try {
+            $reposConfig = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($slug in $created) {
+                $repoProp = $reposConfig.repos.PSObject.Properties | Where-Object { $_.Name -eq $slug }
+                if ($repoProp) {
+                    $vaultName = "${slug}_kb"
+                    $repoProp.Value | Add-Member -MemberType NoteProperty -Name "kb" -Value ([PSCustomObject]@{
+                        vault = $vaultName
+                        path = "dm-kbs/$vaultName"
+                    }) -Force
+                }
+            }
+            $reposConfig | ConvertTo-Json -Depth 10 | Out-File -FilePath $reposPath -Encoding UTF8 -Force
+            Write-Success "  kb 路径已写入 repos.json"
+        } catch {
+            Write-Warn "  repos.json kb 字段更新失败: $_"
+        }
+    }
+
+    # ---- 汇总 ----
+    if ($created.Count -gt 0) {
+        Write-Success "  已创建 vault: $($created -join ', ')"
+        if ($knowleryReady) {
+            Write-Success "  Knowlery 插件已预装，community-plugins.json 已配置"
+        }
+        if ($registeredCount -gt 0) {
+            Write-Success "  已注册 $registeredCount 个 vault 到 Obsidian"
+        }
+        Write-Info ""
+        Write-Info "  ┌─────────────────────────────────────────────────────┐"
+        Write-Info "  │  下一步（每个 vault 只需做一次）:                      │"
+        Write-Info "  │  1. 打开 Obsidian → 选择 {repo}_kb vault              │"
+        Write-Info "  │  2. Settings → Community plugins → Turn on           │"
+        Write-Info "  │  3. Knowlery 自动初始化 vault 结构                    │"
+        Write-Info "  └─────────────────────────────────────────────────────┘"
+    }
+    if ($skipped.Count -gt 0) {
+        Write-Info "  已存在，跳过: $($skipped -join ', ')"
+    }
+    if (-not $obsidianAvailable) {
+        Write-Warn "  Obsidian 未安装或从未启动——vault 已创建但未注册"
+        Write-Warn "  安装 Obsidian 后手动打开 dm-kbs/{repo}_kb/"
+    }
+    if (-not $knowleryReady) {
+        Write-Warn "  Knowlery 未自动安装——请在 Obsidian 中搜索安装 Knowlery 插件"
+    }
+
+    Write-Info ""
+}
+
+# ============================================================
+# Phase 5: 配置生成
+# ============================================================
+
+function Invoke-Phase5($auth) {
+    Write-Banner "Phase 5/6: 配置生成"
 
     $mcpPath = Join-Path $script:RootDir ".mcp.json"
 
@@ -590,11 +859,11 @@ function Invoke-Phase4($auth) {
 }
 
 # ============================================================
-# Phase 5: 连通性自检 + 就绪报告
+# Phase 6: 连通性自检 + 就绪报告
 # ============================================================
 
-function Invoke-Phase5($env, $auth, $repos) {
-    Write-Banner "Phase 5/5: 连通性自检"
+function Invoke-Phase6($env, $auth, $repos) {
+    Write-Banner "Phase 6/6: 连通性自检"
 
     # GitHub
     Write-Info "[GitHub]"
@@ -619,8 +888,8 @@ function Invoke-Phase5($env, $auth, $repos) {
     Write-Info "[Obsidian KB]"
     if ($env.ObsidianPath) {
         Write-Success "  Obsidian CLI: $($env.ObsidianPath)"
-        Write-Info "  在终端执行设置环境变量："
-        Write-Info "    `$env:DMSEEK_OBSIDIAN_CLI = `"$($env.ObsidianPath)`""
+        [Environment]::SetEnvironmentVariable("DMSEEK_OBSIDIAN_CLI", $env.ObsidianPath, "User")
+        Write-Success "  DMSEEK_OBSIDIAN_CLI 已写入用户环境变量"
     } else {
         Write-Warn "  Obsidian CLI 未找到（KB 功能需手动配置）"
     }
@@ -670,10 +939,13 @@ function Main {
     $repos = Invoke-Phase3 $env $auth
 
     # Phase 4
-    Invoke-Phase4 $auth
+    Invoke-Phase4 $repos
 
     # Phase 5
-    Invoke-Phase5 $env $auth $repos
+    Invoke-Phase5 $auth
+
+    # Phase 6
+    Invoke-Phase6 $env $auth $repos
 
     Read-Host "按回车键退出"
 }

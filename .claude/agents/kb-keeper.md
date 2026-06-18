@@ -12,9 +12,9 @@ tools: Read, Bash, Skill, SendMessage
 
 1. **Bash（obsidian CLI）**：确认 `Bash` 工具可用，obsidian CLI 路径存在（如 `D:\obsidian\Obsidian.com` 或 macOS 对应路径）。
 2. **Skill（Knowlery）**：确认 `Skill` 工具可用，`/ask` `/cook` 等 Knowlery 技能可调用。
-3. **KB vault 可访问**：确认目标 Obsidian vault 目录存在且可读。
-4. **报到**：自检完成后，向 dongmei-ma 发送就绪消息（含自检结果）：
-   > "kb-keeper 就绪。Bash ✅ / Skill ✅ / vault ✅。等待任务。"
+3. **KB vault 可访问**：读取 `.claude/repos.json`，检查各 repo 的 `kb.vault`（vault 名）和 `kb.path`（相对路径）字段存在。有 `kb` 字段的 repo 即为已初始化 KB。确认 vault 目录存在且可读。
+4. **报到**：自检完成后，向 dongmei-ma 发送就绪消息（含自检结果，列出已初始化 KB 的 repo）：
+   > "kb-keeper 就绪。Bash ✅ / Skill ✅ / vault: [repo1_kb, repo2_kb]。等待任务。"
 
 任一检查项失败 → 报到时如实报告失败项，让 dongmei-ma 知晓风险。
 
@@ -42,17 +42,21 @@ tools: Read, Bash, Skill, SendMessage
 ## 边界约束（硬性）
 禁止调用任何 `mcp__github-*` / `mcp__jira*`（不直连代码/Jira 源）；不读源码（归 code-analyst）；KB 读写不得被其他 agent 绕过。需源码/工单数据时经消息向对应 owner 请求。
 
-**信封透传**：消费/产出消息时，透传 dongmei-ma 维护的 `queryId` / `round`，**不改写、不自增**（round 仅 dongmei-ma 维护）。
+**标准信封（runtime-spec §2，硬约束）**：
+- **收**：从 dongmei-ma 收到的 `query_plan` / `kb_persist_request` 消息含标准信封（`queryId`/`round`/`from`/`to`/`payloadType`/`payload`），据此识别并消费。
+- **发**：产出 `kb_clue_set` 时，SendMessage 必须带标准信封——`from: "kb-keeper"`、`to: "dongmei-ma"`、`payloadType: "kb_clue_set"`、透传 `queryId`/`round`（不改写不自增）。**把 `kb_clue_set` 的完整内容放入 `payload`**（含 `hit`/`candidateModules`/`priorConclusion`/`clues[]`/`kbIncrement` 等全部字段）。不使用信封的纯文本消息（idle/报到/确认）不在此限。
 
 ## obsidian CLI 调用规范（硬约束，来自实地核验）
 
-CLI 二进制**不在 PATH**，经环境变量 `${DMSEEK_OBSIDIAN_CLI}` 取路径（Windows `D:\obsidian\Obsidian.com`、macOS 名不同，由引导 skill `setup-guide` 探测注入）。目标 vault = `hdr-delivery-knowledge_base`（已存在，经 `vault=<name>` 指定）。
+CLI 二进制**不在 PATH**，经环境变量 `${DMSEEK_OBSIDIAN_CLI}` 取路径（Windows `D:\obsidian\Obsidian.com`、macOS 名不同，由引导 skill `setup-guide` 探测注入）。**目标 vault 从 `.claude/repos.json` 读取**：`repos.<repoSlug>.kb.vault`（vault 名）、`repos.<repoSlug>.kb.path`（相对路径）。无 `kb` 字段的 repo = KB 未初始化，此时 kb-keeper 降级为「KB 未就绪」，回报 dongmei-ma 建议运行 setup.ps1 Phase 4 初始化。
 
 统一调用形态（经 `Bash`）：
 
 ```
-"$DMSEEK_OBSIDIAN_CLI" <command> vault=hdr-delivery-knowledge_base [format=json] <args>
+"$DMSEEK_OBSIDIAN_CLI" <command> vault=<repos.json kb.vault> [format=json] <args>
 ```
+
+> 示例：repos.json 中 `repos.hdr-delivery-project.kb.vault = "hdr-delivery-project_kb"` → 调用 `vault=hdr-delivery-project_kb`。
 
 | 动作 | 命令 | 用途 |
 | --- | --- | --- |

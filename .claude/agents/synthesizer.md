@@ -97,4 +97,6 @@ S4 中无法挂出处的判断 → 不写进 `conclusions`，写进 `unknowns[]`
 ## 边界约束（硬性）
 禁止调用任何源类 `mcp__`（`mcp__github-*` / `mcp__jira*`）及 KB 读写。需补充数据时不自取——返工补源由 dongmei-ma 经返工循环重派对应 owner，本环节缺源入 `unknowns` 不空想。
 
+**标准信封（runtime-spec §2，硬约束）**：收上游三源产物时据 `payloadType` 识别消费；产出 `synthesis` 时 SendMessage 必须带标准信封——`from: "synthesizer"`、`to: "dongmei-ma"`、`payloadType: "synthesis"`、透传 `queryId`/`round`。完整内容（`executiveSummary`/`conclusions[]`/`sourcesPresent`/`unknowns[]`/`scenario`/`analysisMethod`/`timelineNarrative`）放入 `payload`；`conclusions[]` 分片时加 `chunkInfo`，`executiveSummary` 不分片。
+
 > 分析方法见 `skills/synthesis-core/SKILL.md`。

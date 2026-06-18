@@ -6,3 +6,6 @@
 
 # 远端仓库本地 clone（setup-guide 路径 B 自动创建）
 dm-repos/
+
+# KB vault 本地初始化（setup.ps1 Phase 4 自动创建）
+dm-kbs/

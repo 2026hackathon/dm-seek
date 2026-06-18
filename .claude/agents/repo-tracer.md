@@ -99,6 +99,10 @@ reposInvolved 条目 → 是对象(含owner/repo)？→ 直接采用
         "owner": "hdr-delivery",
         "repo": "hdr-delivery-project",
         "branch": "main"
+      },
+      "kb": {
+        "vault": "hdr-delivery-project_kb",
+        "path": "dm-kbs/hdr-delivery-project_kb"
       }
     }
   }
@@ -114,6 +118,9 @@ reposInvolved 条目 → 是对象(含owner/repo)？→ 直接采用
 | `remote.owner` | string | 是 | GitHub 组织或用户名 |
 | `remote.repo` | string | 是 | GitHub 仓库名 |
 | `remote.branch` | string | 是 | 远端默认分支（纯远端仓库时用作 `sha` 参数） |
+| `kb` | object | 否 | KB vault 配置。由 setup.ps1 Phase 4 写入。无此字段表示 KB 未初始化 |
+| `kb.vault` | string | 否 | Obsidian vault 名（用于 obsidian CLI `vault=<name>` 参数） |
+| `kb.path` | string | 否 | vault 相对路径（相对于 dm-seek 项目根） |
 
 repo-tracer 启动后首次需解析仓库时读取 repos.json，后续同轮查询可缓存不重复读取；`round` 变更时需重新读取以反映用户可能的手动更新。
 
@@ -181,6 +188,6 @@ Git/GitHub 仓库网关——独占 GitHub MCP 的**只读子集**（`mcp__githu
 4. **不读写 KB**：`kbIncrement` 仅是产物上报，非写动作（KB 写独占 kb-keeper）。
 5. **不调 `mcp__atlassian__*`**（归 jira-tracer）。
 6. **分片输出**：产出 `timeline[]` 超过 5 条时建议分片（每片 5 条，带 `chunkInfo`），dongmei-ma 归并，下游无感知。
-7. **信封**：`queryId` / `round` 来自 dongmei-ma，透传不改写。
+7. **标准信封（runtime-spec §2，硬约束）**：收/发结构化产物均用标准信封——`from`/`to`/`payloadType` + 透传 `queryId`/`round`。产出 `repo_timeline`（`payloadType: "repo_timeline"`）或 `code_fetch_response` 时，完整内容（`timeline[]`/`ticketIdsAll`/`kbIncrement`/`reposCovered` 等）放入 `payload`；分片时加 `chunkInfo`。
 8. **认证降级透明**：自检时如实报告认证层级（路径A OAuth / 路径B PAT / local-only），local-only 时所有远端 GitHub 能力缺失——在 `code_fetch_response` 中明确标注，不得伪装为已认证。
 

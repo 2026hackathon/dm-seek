@@ -11,22 +11,27 @@ description: 马冬梅计划知识库初始化——以 core-ng 的 REST 入口(
 - 用户尚无知识库，或希望对某仓/某服务补充建库。**可选、不设硬性上限**，由用户用 scope 控制范围。
 
 ## 输入参数
-- `repos`：要初始化的仓库（默认全部已配置仓库，多仓**分别**初始化）。
+- `repos`：要初始化的仓库（默认全部已配置仓库，多仓**分别**初始化）。**仅处理 repos.json 中已配置 `kb` 字段的仓库**——无 `kb` 表示 KB vault 未创建，需先运行 `setup.ps1` Phase 4。
 - `scope`：范围（默认 `all` 全部入口点；可 `service=<名>` / `module=<名>` / `package=<名>` 限定）。
 - `maxDepth`：调用链遍历深度上限（默认到 **Repository/Domain 层**止，防大仓链路爆炸；与 coreng-recognition 规则表中「调用链终点=存储层双形态」对齐）。
 
+## Vault 定位
+
+**KB vault 位置从 `.claude/repos.json` 读取**（runtime-spec §12）。每个 repo 的 `kb.vault`（Obsidian vault 名）和 `kb.path`（相对路径）由 setup.ps1 Phase 4 自动写入。无 `kb` 字段的 repo 跳过初始化，回报用户运行 `setup.ps1`。
+
 ## 流程（单仓；dongmei-ma 编排，逐 agent 调度）
 
-1. **范围确定**：默认全部入口点；或按 `scope` 限定。
-2. **code-analyst 枚举入口点（种子）**——**REST 两形态都要枚举（硬要求）**：
+1. **前置校验**：读 `.claude/repos.json`，过滤出含 `kb` 字段的 repo。若 `repos` 参数指定了 repo 但无 `kb` 字段 → 回报用户该 repo 的 KB vault 未创建。若全部无 `kb` → 终止，提示运行 `setup.ps1`。
+2. **范围确定**：默认全部入口点；或按 `scope` 限定。
+3. **code-analyst 枚举入口点（种子）**——**REST 两形态都要枚举（硬要求）**：
    - 形态A：`{service}-interface` 模块 `api/` 包的 `*WebService` 接口（`@GET/@POST/@PUT/@PATCH/@DELETE/@Path/@PathParam`，import 自 `core.framework.api.web.service.*`），实现 `{service}/web/*WebServiceImpl`；
    - 形态B：`Controller` + `http().route(HTTPMethod.X, path, controller::method)`；
    - Kafka 入口：`implements MessageHandler<T>`（`core.framework.kafka.MessageHandler`，非 @KafkaListener），注册在 `{Service}App.bindSubscribe()`。
-3. **code-analyst 沿调用链展开**：入口 → `@Inject` 注入的 Service（Query/Operation/Creation）→ Repository（`db().repository`）/ Mongo（`config(MongoConfig).collection/.view`，**双存储形态都覆盖**）→ Domain，到 `maxDepth` 止。产出「入口 → 调用链类集合 → repo+模块」清单（粗粒度，不逐行解读）。
-4. **repo-tracer 取提交线索**：对清单中类/文件取关键 commit（首次引入/最近修改），抽 Jira 工单号（`^([A-Z]+-\d+)[:\s]`、容错无号、Revert 穿透）。
-5. **jira-tracer 取业务原因**：对抽到的工单号取「summary + description 概述」级（建库期不取全量评论/changelog）。
-6. **kb-keeper 落库**：把 (入口/模块/调用链 + commit 线索 + 工单线索) 经 `/cook` 按 SCHEMA 编译为粗粒度条目，写入该 repo 命名空间（`<repoSlug>/`，**目录无 dot 前缀**）。`type: entrypoint|module`、`granularity: coarse`、`degraded: false`；**建库期只产中文骨架、不产英文摘要**（英文摘要在条目首次被查询细化时补，合 O9）。
-7. **幂等**：已存在条目 → append/更新，不重复建；记 init 元数据（范围、时间、commit HEAD）到 `_meta/<repoSlug>.init.md`。
+4. **code-analyst 沿调用链展开**：入口 → `@Inject` 注入的 Service（Query/Operation/Creation）→ Repository（`db().repository`）/ Mongo（`config(MongoConfig).collection/.view`，**双存储形态都覆盖**）→ Domain，到 `maxDepth` 止。产出「入口 → 调用链类集合 → repo+模块」清单（粗粒度，不逐行解读）。
+5. **repo-tracer 取提交线索**：对清单中类/文件取关键 commit（首次引入/最近修改），抽 Jira 工单号（`^([A-Z]+-\d+)[:\s]`、容错无号、Revert 穿透）。
+6. **jira-tracer 取业务原因**：对抽到的工单号取「summary + description 概述」级（建库期不取全量评论/changelog）。
+7. **kb-keeper 落库**：把 (入口/模块/调用链 + commit 线索 + 工单线索) 经 `/cook` 按 SCHEMA 编译为粗粒度条目。**目标 vault 从 `.claude/repos.json` → `repos.<repoSlug>.kb.vault` 读取**（obsidian CLI `vault=<kb.vault>` 参数），条目路径 `<repoSlug>/`（**目录无 dot 前缀**）。`type: entrypoint|module`、`granularity: coarse`、`degraded: false`；**建库期只产中文骨架、不产英文摘要**（英文摘要在条目首次被查询细化时补，合 O9）。
+8. **幂等**：已存在条目 → append/更新，不重复建；记 init 元数据（范围、时间、commit HEAD）到 `_meta/<repoSlug>.init.md`。
 
 ## 多仓 / 双源
 - **多仓分别 init**，KB 内按 `<repoSlug>/` 命名空间隔离。

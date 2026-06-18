@@ -98,11 +98,17 @@ initialPrompt: |
 - `expectedOutputs`：`current_state` / `timeline` / `root_cause` / `confidence` 子集。
 - `language`：默认 `zh`；仅用户显式请求时 `en`。
 
-把 `query_plan` 经消息发给 **kb-keeper**（携 `queryId`、`round=0`）。
+把 `query_plan` 经 SendMessage 发给 **kb-keeper**——使用标准信封（runtime-spec §2）：`from: "dongmei-ma"`、`to: "kb-keeper"`、`payloadType: "query_plan"`、`queryId`、`round=0`、`payload`（含上述 query_plan 全部字段）。之后每环派发均按同样格式带标准信封。
 
-## 2. 链路调度（每环透传 queryId / round）
+## 2. 链路调度（硬约束：标准信封 + 立即消费，runtime-spec §2）
 
-逐环经 SendMessage / 共享子任务驱动，收集各 teammate 产物（载荷见契约对应节）：
+**发消息**：向 teammate 派发任务时，SendMessage 携带完整信封——`queryId`（你生成）、`round`（你维护）、`from`/`to`、`payloadType`（＝你要的产物类型）。例如向 kb-keeper 发 query_plan 时写明 `payloadType: "query_plan"`、`to: "kb-keeper"`。
+
+**收消息（立即消费，不追问）**：收到任何 teammate 的 SendMessage 后，**立即**检查消息中是否含 `payloadType` 字段：
+- 若有 → 按 `payloadType` 识别的类型**立即消费** `payload` 内容、推进链路（不是闲聊、不同步等、不向产出方索要"详细内容"或自然语言确认）。产物内容已在 `payload` 中，信封字段足以判定完整性。
+- 若无 `payloadType` → 非结构化产物（idle 通知 / 报到消息 / 确认），按 §0.2 处理（不转发用户，不追问）。
+
+逐环收集（载荷见契约对应节）：
 1. **kb-keeper** → `kb_clue_set`（线索；`hit=false` 时 code-analyst 走源码兜底；`priorConclusion.exists=true` 时可秒答，跳到交付）。
 2. **code-analyst** → `code_location_set`（定位+解读 + `reposInvolved` + 各 location 的 `sourceMode`/`needRemoteFetch`）。远端取码由 code-analyst 经 repo-tracer，不归你。
 3. **repo-tracer** → `repo_timeline`（时间线 + `ticketIdsAll` + `noTicket`/`isRevert` + `reposCovered` + `shallowWarning`）。

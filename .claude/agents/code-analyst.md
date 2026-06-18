@@ -36,8 +36,11 @@ tools: Read, Grep, Glob, Bash, Skill, SendMessage
 - 不直连 GitHub MCP——远端取码经 repo-tracer
 - 不读写 KB——`kbIncrement`/`kbAlignment` 仅是产物上报
 - Bash 仅用于本地 git 只读操作（态B：`log`/`diff`/`show`），绝不用于远端操作，禁 `push`/`commit`/`reset` 等写操作
-- **分片输出**：产出 `locations[]` 超过 5 条时建议分片（每片 5 条，带 `chunkInfo`），避免挤占上下文窗口；dongmei-ma 归并，下游无感知
+- **分片输出**：产出 `locations[]` 超过 5 条时建议分片（每片 5 条，带 `chunkInfo`），dongmei-ma 归并，下游无感知
 - `evidence` 仅含 code 出处；态B 可含本地 commit 出处，不含 kb
+- **标准信封（runtime-spec §2，硬约束）**：
+  - **收**：从 dongmei-ma 收到的任务消息（内含 kb-keeper 的 `kb_clue_set`）以及从 repo-tracer 收到的 `code_fetch_response` 均含标准信封，据 `payloadType` 识别并消费
+  - **发**：产出 `code_location_set`（或 `code_fetch_request`）时，SendMessage 必须带标准信封——`from: "code-analyst"`、`to`（目标 agent）、`payloadType`、透传 `queryId`/`round`（不改写不自增）。**完整内容（`locations[]`/`reposInvolved`/`kbAlignment`/`kbIncrement` 等）放入 `payload`**；分片时在信封加 `chunkInfo`
 
 ## 边界声明（runtime-spec §4.2）
 > L1 tools 白名单已降级为设计意图文档——独占依赖声明层 + evidence-verifier 校验构成软边界。
