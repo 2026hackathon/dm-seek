@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     dm-seek Windows 一键初始化脚本
 .DESCRIPTION
@@ -8,13 +8,25 @@
 #>
 #Requires -Version 5.1
 
-$ErrorActionPreference = "Stop"
+# 最早输出——确保用户能看到脚本已启动
+Write-Host "dm-seek setup.ps1 启动中..." -ForegroundColor Cyan
+
 # RootDir = 项目根目录。如果脚本在 scripts/ 子目录下，取上一级；否则取脚本自身所在目录。
-$script:RootDir = $PSScriptRoot
-if ((Split-Path -Leaf $script:RootDir) -eq "scripts") {
-    $script:RootDir = Split-Path -Parent $script:RootDir
+try {
+    $script:RootDir = $PSScriptRoot
+    if ((Split-Path -Leaf $script:RootDir) -eq "scripts") {
+        $script:RootDir = Split-Path -Parent $script:RootDir
+    }
+    $script:RootDir = (Resolve-Path $script:RootDir).Path
+} catch {
+    Write-Host "错误: 无法解析脚本根目录: $_" -ForegroundColor Red
+    Write-Host "PSScriptRoot: $PSScriptRoot" -ForegroundColor Red
+    Write-Host "请确保从脚本所在目录或 scripts/ 子目录运行。" -ForegroundColor Red
+    Read-Host "按回车键退出"
+    exit 1
 }
-$script:RootDir = (Resolve-Path $script:RootDir).Path
+
+$ErrorActionPreference = "Stop"
 
 # ============================================================
 # 工具函数
@@ -59,6 +71,42 @@ function Read-MaskedInput($prompt) {
     $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
     try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
     finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+}
+
+function Get-BranchChoice($env, $owner, $repo, $localPath, $defaultBranch) {
+    $branches = @()
+    # 方式 1: 本地仓库 → git ls-remote
+    if ($localPath -and (Test-Path $localPath)) {
+        try {
+            $raw = git -C $localPath ls-remote --heads origin 2>$null
+            if ($raw) {
+                $branches = $raw -split "`n" | ForEach-Object {
+                    if ($_ -match "refs/heads/(.+)$") { $Matches[1] }
+                } | Where-Object { $_ }
+            }
+        } catch { }
+    }
+    # 方式 2: gh CLI
+    if ($branches.Count -eq 0 -and $env.GhFound -and $owner -and $repo) {
+        try {
+            $raw = & $env.GhPath api "repos/$owner/$repo/branches" --jq ".[].name" 2>$null
+            if ($raw) { $branches = $raw -split "`n" | Where-Object { $_ } }
+        } catch { }
+    }
+
+    if ($branches.Count -gt 0) {
+        Write-Info "    可用分支（默认: $defaultBranch）："
+        for ($j = 0; $j -lt $branches.Count; $j++) {
+            $mark = if ($branches[$j] -eq $defaultBranch) { " [默认]" } else { "" }
+            Write-Info "      [$($j+1)] $($branches[$j])$mark"
+        }
+        $bSel = Read-Host "    选择分支编号（回车使用默认）"
+        if ($bSel -match "^\d+$") {
+            $bIdx = [int]$bSel - 1
+            if ($bIdx -ge 0 -and $bIdx -lt $branches.Count) { return $branches[$bIdx] }
+        }
+    }
+    return $defaultBranch
 }
 
 # ============================================================
@@ -161,112 +209,144 @@ function Invoke-Phase2($env) {
 
     $auth = @{ Mode = ""; PAT = $null }
 
-    # ---- 路径 A: gh CLI + OAuth（自动检测，优先） ----
+    # ---- 路径 A: gh CLI + OAuth ----
     Write-Info "[路径 A] gh CLI + OAuth"
-    $oauthReady = $false
+    $aCliOk = $false; $aAuthOk = $false; $aMcpOk = $false
 
-    # 安装 gh CLI（如未安装）
     if (-not $env.GhFound) {
         if ($env.WingetAvailable) {
             Write-Info "  gh CLI 未安装，通过 winget 自动安装..."
             if (Install-WingetPackage "GitHub.cli" "GitHub CLI") {
                 $env.GhFound = $true
                 $env.GhPath = "gh"
-                Write-Success "  gh CLI 安装完成"
-            } else {
-                Write-Warn "  gh CLI 自动安装失败"
             }
-        } else {
-            Write-Warn "  gh CLI 未安装且 winget 不可用，路径 A 不可用"
         }
-    } else {
-        Write-Success "  gh CLI 已安装: $($env.GhPath)"
     }
-
-    # 认证 + 扩展安装
     if ($env.GhFound) {
+        Write-Success "  gh CLI: $($env.GhPath)"
+        $aCliOk = $true
+
         & $env.GhPath auth status 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "  gh 已认证"
+            Write-Success "  gh auth: 已认证"
+            $aAuthOk = $true
         } else {
-            Write-Info "  gh 未认证，启动 gh auth login（将打开浏览器）..."
-            Write-Info "  请选择: GitHub.com → HTTPS → Login with a web browser"
-            & $env.GhPath auth login --hostname github.com --git-protocol https --web
-            if ($LASTEXITCODE -eq 0) {
-                Write-Success "  gh 认证完成"
-            } else {
-                Write-Warn "  gh auth login 失败"
-            }
+            Write-Warn "  gh auth: 未认证（运行 gh auth login 配置）"
         }
 
-        # 认证成功后安装 gh-mcp 扩展
-        & $env.GhPath auth status 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+        if ($aAuthOk) {
             $extList = & $env.GhPath extension list 2>$null | Out-String
             if ($extList -match "shuymn/gh-mcp") {
-                Write-Success "  gh-mcp 扩展已安装"
+                Write-Success "  gh-mcp: 已安装"
+                $aMcpOk = $true
             } else {
-                Write-Info "  安装 gh-mcp 扩展..."
-                & $env.GhPath extension install shuymn/gh-mcp 2>$null
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Success "  gh-mcp 扩展安装完成"
-                } else {
-                    Write-Warn "  gh-mcp 扩展安装失败，请手动: gh extension install shuymn/gh-mcp"
-                }
+                Write-Warn "  gh-mcp: 未安装（运行 gh extension install shuymn/gh-mcp）"
             }
-            $oauthReady = $true
         }
+    } else {
+        Write-Warn "  gh CLI: 未安装"
     }
 
-    if ($oauthReady) {
-        $auth.Mode = "oauth"
-        Write-Success "  [路径 A] OAuth 就绪"
-        Write-Info ""
-        return $auth
-    }
+    $aReady = $aCliOk -and $aAuthOk -and $aMcpOk
+    if ($aReady) { Write-Success "  [路径 A] OAuth 就绪" }
+    else         { Write-Warn "  [路径 A] OAuth 未就绪" }
 
-    # ---- 路径 B: PAT（路径 A 不可用时的兜底） ----
+    # ---- 路径 B: PAT ----
     Write-Info ""
     Write-Info "[路径 B] Personal Access Token"
     $existingPAT = $env:GITHUB_TOKEN
     if (-not $existingPAT) {
-        # 检查用户环境变量
         $existingPAT = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN", "User")
     }
+    $bReady = $false
     if ($existingPAT) {
-        Write-Success "  GITHUB_TOKEN 已设置"
-        $auth.Mode = "pat"
-        $auth.PAT = $existingPAT
-        Write-Info ""
-        return $auth
+        Write-Success "  GITHUB_TOKEN: 已设置"
+        $bReady = $true
+    } else {
+        Write-Warn "  GITHUB_TOKEN: 未设置"
     }
 
-    # ---- A/B 都不满足，引导用户 ----
-    Write-Warn "  路径 A（gh CLI + OAuth）不可用，路径 B（GITHUB_TOKEN）未设置"
+    # ---- 输出状态 ----
     Write-Info ""
-    Write-Info "  请选择以下方式之一配置 GitHub 认证："
-    Write-Info ""
-    Write-Info "  [A] 安装 gh CLI + OAuth 认证"
-    Write-Info "      下载: https://cli.github.com → 安装 → 终端运行 gh auth login"
-    Write-Info "      然后重新运行本脚本"
-    Write-Info ""
-    Write-Info "  [B] 创建 Personal Access Token（无需 gh CLI）"
-    Write-Info "      1. 打开: https://github.com/settings/tokens → Generate new token (classic)"
-    Write-Info "      2. Note: dm-seek  |  Scope: repo（只读）+ read:org（按需）"
-    Write-Info "      3. 生成后运行: setx GITHUB_TOKEN <你的token>"
-    Write-Info "      4. 重启终端，重新运行本脚本"
-    Write-Info ""
-    $manual = Read-Host "  或现在输入 PAT（回车跳过退出）"
-    if ($manual) {
+    Write-Info "  认证状态："
+    if ($aReady) { Write-Success "    [A] gh CLI + OAuth — 就绪" }
+    else         { Write-Warn  "    [A] gh CLI + OAuth — 未就绪" }
+    if ($bReady) { Write-Success "    [B] PAT — 就绪" }
+    else         { Write-Warn  "    [B] PAT — 未就绪" }
+
+    # ---- 默认选择 ----
+    if ($aReady) {
+        $auth.Mode = "oauth"
+    } elseif ($bReady) {
         $auth.Mode = "pat"
-        $auth.PAT = $manual
-        [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", $manual, "User")
-        $env:GITHUB_TOKEN = $manual
-        Write-Success "  GITHUB_TOKEN 已写入用户环境变量"
-        Write-Warn "  注意：需重启终端使环境变量对所有进程生效"
+        $auth.PAT = $existingPAT
+    }
+
+    # ---- 允许切换 ----
+    if ($aReady -or $bReady) {
+        Write-Info ""
+        Write-Success ">> 当前使用路径 $($auth.Mode.ToUpper())"
+        $change = Read-Host "  是否需要修改？[Y=修改 / 回车=保持]"
+        if ($change -eq "Y" -or $change -eq "y") {
+            Write-Info "  可选："
+            if ($aReady) { Write-Info "    [A] gh CLI + OAuth" }
+            else         { Write-Info "    [A] gh CLI + OAuth（未就绪）" }
+            if ($bReady) { Write-Info "    [B] PAT" }
+            else         { Write-Info "    [B] PAT（未就绪）" }
+            $pick = Read-Host "  选择"
+            if ($pick -eq "A" -or $pick -eq "a") {
+                if ($aReady) {
+                    $auth.Mode = "oauth"
+                    Write-Success ">> 已切换为路径 A（OAuth）"
+                } else {
+                    Write-Warn "  路径 A 未就绪：需安装 gh CLI 并认证"
+                    Write-Info "    1. winget install GitHub.cli"
+                    Write-Info "    2. gh auth login"
+                    Write-Info "    3. gh extension install shuymn/gh-mcp"
+                }
+            } elseif ($pick -eq "B" -or $pick -eq "b") {
+                if ($bReady) {
+                    $auth.Mode = "pat"
+                    $auth.PAT = $existingPAT
+                    Write-Success ">> 已切换为路径 B（PAT）"
+                } else {
+                    Write-Warn "  路径 B 未就绪：需设置 GITHUB_TOKEN"
+                    Write-Info "    1. 创建 PAT: https://github.com/settings/tokens"
+                    Write-Info "    2. 运行: setx GITHUB_TOKEN <你的token>"
+                    Write-Info "    3. 重启终端后重新运行本脚本"
+                }
+            }
+        }
     } else {
-        Write-ErrorMsg "GitHub 认证未配置，已退出。请按上述指引配置后重新运行。"
-        exit 1
+        # A/B 都不满足，引导用户
+        Write-Warn "→ 路径 A 和 B 均未就绪"
+        Write-Info ""
+        Write-Info "  请选择以下方式之一配置 GitHub 认证："
+        Write-Info ""
+        Write-Info "  [A] gh CLI + OAuth（推荐，零 PAT）"
+        Write-Info "      1. 下载安装: https://cli.github.com"
+        Write-Info "      2. 终端运行: gh auth login"
+        Write-Info "      3. 安装扩展: gh extension install shuymn/gh-mcp"
+        Write-Info "      4. 重新运行本脚本"
+        Write-Info ""
+        Write-Info "  [B] Personal Access Token（无需 gh CLI）"
+        Write-Info "      1. 打开: https://github.com/settings/tokens → Generate new token (classic)"
+        Write-Info "      2. Note: dm-seek  |  Scope: repo（只读）"
+        Write-Info "      3. 运行: setx GITHUB_TOKEN <你的token>"
+        Write-Info "      4. 重启终端，重新运行本脚本"
+        Write-Info ""
+        $manual = Read-Host "  或现在输入 PAT（回车退出）"
+        if ($manual) {
+            $auth.Mode = "pat"
+            $auth.PAT = $manual
+            [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", $manual, "User")
+            $env:GITHUB_TOKEN = $manual
+            Write-Success "  GITHUB_TOKEN 已写入用户环境变量"
+            Write-Warn "  注意：需重启终端使环境变量对所有进程生效"
+        } else {
+            Write-ErrorMsg "GitHub 认证未配置，已退出。请按上述指引配置后重新运行。"
+            exit 1
+        }
     }
 
     Write-Info ""
@@ -299,6 +379,11 @@ function Invoke-Phase3($env, $auth) {
                     }
                 }
                 Write-Info "已加载现有配置: $($repos.Count) 个仓库"
+                foreach ($slug in $repos.Keys) {
+                    $r = $repos[$slug]
+                    $localInfo = if ($r.local) { $r.local.path } else { "(仅远端)" }
+                    Write-Info "  $slug — $($r.remote.owner)/$($r.remote.repo) [$($r.remote.branch)]"
+                }
             }
         } catch {
             Write-Warn "现有 repos.json 解析失败，将重新创建"
@@ -306,6 +391,84 @@ function Invoke-Phase3($env, $auth) {
         }
     }
 
+    # ---- 操作菜单 ----
+    Write-Info ""
+    Write-Info "[A] 调整仓库分支"
+    Write-Info "[B] 扫描加载仓库"
+    Write-Info "[回车] 保持现有配置，继续"
+    $choice = Read-Host "选择操作"
+
+    # ---- 选项 A: 调整分支 ----
+    if ($choice -eq "A" -or $choice -eq "a") {
+        if ($repos.Count -eq 0) {
+            Write-Warn "  无已配置仓库，无法调整分支"
+        } else {
+            Write-Info "  已配置仓库："
+            $slugs = @($repos.Keys)
+            for ($i = 0; $i -lt $slugs.Count; $i++) {
+                $s = $slugs[$i]
+                $r = $repos[$s]
+                Write-Info "    [$($i+1)] $s — $($r.remote.owner)/$($r.remote.repo) [$($r.remote.branch)]"
+            }
+            $sel = Read-Host "  选择仓库编号"
+            if ($sel -match "^\d+$") {
+                $idx = [int]$sel - 1
+                if ($idx -ge 0 -and $idx -lt $slugs.Count) {
+                    $slug = $slugs[$idx]
+                    $r = $repos[$slug]
+                    $owner = $r.remote.owner
+                    $repo = $r.remote.repo
+
+                    # 取远端分支列表
+                    $branches = @()
+                    # 方式 1: 本地仓库有 git → git ls-remote
+                    if ($r.local -and $r.local.path -and (Test-Path $r.local.path)) {
+                        try {
+                            $raw = git -C $r.local.path ls-remote --heads origin 2>$null
+                            if ($raw) {
+                                $branches = $raw -split "`n" | ForEach-Object {
+                                    if ($_ -match "refs/heads/(.+)$") { $Matches[1] }
+                                } | Where-Object { $_ }
+                            }
+                        } catch { }
+                    }
+                    # 方式 2: gh CLI
+                    if ($branches.Count -eq 0 -and $env.GhFound -and $owner -and $repo) {
+                        try {
+                            $raw = & $env.GhPath api "repos/$owner/$repo/branches" --jq ".[].name" 2>$null
+                            if ($raw) { $branches = $raw -split "`n" | Where-Object { $_ } }
+                        } catch { }
+                    }
+
+                    if ($branches.Count -gt 0) {
+                        Write-Info "  $slug 可用分支（当前: $($r.remote.branch)）："
+                        for ($j = 0; $j -lt $branches.Count; $j++) {
+                            $mark = if ($branches[$j] -eq $r.remote.branch) { " [当前]" } else { "" }
+                            Write-Info "    [$($j+1)] $($branches[$j])$mark"
+                        }
+                        $bSel = Read-Host "  选择分支编号（回车保持当前）"
+                        if ($bSel -match "^\d+$") {
+                            $bIdx = [int]$bSel - 1
+                            if ($bIdx -ge 0 -and $bIdx -lt $branches.Count) {
+                                $r.remote.branch = $branches[$bIdx]
+                                Write-Success "  $slug 分支已更新: $($branches[$bIdx])"
+                            }
+                        }
+                    } else {
+                        Write-Warn "  无法获取远端分支列表（无本地仓库且 gh CLI 不可用）"
+                        $newBranch = Read-Host "  手动输入新分支名（当前: $($r.remote.branch)，回车保持）"
+                        if ($newBranch) {
+                            $r.remote.branch = $newBranch
+                            Write-Success "  $slug 分支已更新: $newBranch"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # ---- 选项 B: 扫描加载仓库 ----
+    if ($choice -eq "B" -or $choice -eq "b") {
     # --- 路径 A: 本地仓库 ---
     Write-Info "是否需要扫描本地目录查找 git 仓库？[Y/N]"
     $wantScan = Read-Host "(Y=是 / N=否)"
@@ -372,15 +535,18 @@ function Invoke-Phase3($env, $auth) {
                     if ($idx -ge 0 -and $idx -lt $foundRepos.Count) {
                         $r = $foundRepos[$idx]
                         if (-not $repos.ContainsKey($r.Slug)) {
+                            $owner = ($r.OwnerRepo -split "/")[0]
+                            $repo = ($r.OwnerRepo -split "/")[1]
+                            $chosen = Get-BranchChoice $env $owner $repo $r.Path $r.Branch
                             $repos[$r.Slug] = @{
                                 local = @{ path = $r.Path }
                                 remote = @{
-                                    owner = ($r.OwnerRepo -split "/")[0]
-                                    repo = ($r.OwnerRepo -split "/")[1]
-                                    branch = $r.Branch
+                                    owner = $owner
+                                    repo = $repo
+                                    branch = $chosen
                                 }
                             }
-                            Write-Success "    已添加: $($r.Slug)"
+                            Write-Success "    已添加: $($r.Slug) [$chosen]"
                         }
                     }
                 }
@@ -409,15 +575,18 @@ function Invoke-Phase3($env, $auth) {
             $owner = $Matches[1]
             $repo = $Matches[2]
         }
+        $resolvedPath = (Resolve-Path $localPath).Path
+        $defaultBr = if ($branch) { $branch } else { "main" }
+        $chosen = Get-BranchChoice $env $owner $repo $resolvedPath $defaultBr
         $repos[$slug] = @{
-            local = @{ path = (Resolve-Path $localPath).Path }
+            local = @{ path = $resolvedPath }
             remote = @{
                 owner = $owner
                 repo = $repo
-                branch = if ($branch) { $branch } else { "main" }
+                branch = $chosen
             }
         }
-        Write-Success "  已添加: $slug ($owner/$repo) [$branch]"
+        Write-Success "  已添加: $slug ($owner/$repo) [$chosen]"
         Write-Info "继续添加？[Y/N]"
         $wantManual = Read-Host "(Y=是 / N=否)"
     }
@@ -582,12 +751,14 @@ function Invoke-Phase3($env, $auth) {
                                     }
                                 }
                                 if ($exitCode -eq 0) {
+                                    $resolvedPath = (Resolve-Path $clonePath).Path
+                                    $chosen = Get-BranchChoice $env $owner $slug $resolvedPath $branch
                                     $repos[$slug] = @{
-                                        local = @{ path = (Resolve-Path $clonePath).Path }
-                                        remote = @{ owner = $owner; repo = $slug; branch = $branch }
+                                        local = @{ path = $resolvedPath }
+                                        remote = @{ owner = $owner; repo = $slug; branch = $chosen }
                                     }
                                     $selectedSlugs[$slug] = $true
-                                    Write-Success "    $slug clone 完成"
+                                    Write-Success "    $slug clone 完成 [$chosen]"
                                 } else {
                                     Write-Warn "    $slug clone 失败（权限不足或网络问题）"
                                 }
@@ -601,6 +772,7 @@ function Invoke-Phase3($env, $auth) {
             }
         }
     }
+    }  # 选项 B 结束
 
     # --- 写入 repos.json ---
     $reposJson = @{ repos = $repos }
