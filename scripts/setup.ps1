@@ -8,8 +8,15 @@
 #>
 #Requires -Version 5.1
 
+param(
+    [string]$Phase,          # 直接跳转到指定 Phase（1-6），跳过菜单
+    [switch]$Auto            # 全量线性执行（兼容旧用法，等效于依次执行 Phase 1-6）
+)
+
 # 最早输出——确保用户能看到脚本已启动
 Write-Host "dm-seek setup.ps1 启动中..." -ForegroundColor Cyan
+if ($Phase) { Write-Host "  参数: -Phase $Phase" -ForegroundColor Cyan }
+if ($Auto)  { Write-Host "  参数: -Auto（全量执行）" -ForegroundColor Cyan }
 
 # RootDir = 项目根目录。如果脚本在 scripts/ 子目录下，取上一级；否则取脚本自身所在目录。
 try {
@@ -110,6 +117,206 @@ function Get-BranchChoice($env, $owner, $repo, $localPath, $defaultBranch) {
 }
 
 # ============================================================
+# 状态检测（供菜单使用）
+# ============================================================
+
+$script:EnvState = $null    # Phase 1 结果缓存
+$script:AuthState = $null   # Phase 2 结果缓存
+$script:ReposState = $null  # Phase 3 结果缓存
+
+function Get-InitStatus {
+    <#
+    .SYNOPSIS
+        轻量探测当前环境状态（不修改任何文件），返回结构化对象供菜单展示。
+    #>
+    $status = [ordered]@{
+        GitFound       = $false
+        GitVersion     = ""
+        GhFound        = $false
+        GhVersion      = ""
+        GhAuthOk       = $false
+        GhMcpOk        = $false
+        ObsidianFound  = $false
+        ObsidianPath   = ""
+        WingetAvailable = $false
+        AuthMode       = ""       # oauth / pat / none
+        AuthMcpConsistent = $true # .mcp.json 与认证模式是否一致
+        RepoCount      = 0
+        RepoLocalCount = 0
+        RepoRemoteOnlyCount = 0
+        KbVaultTotal   = 0
+        KbVaultDone    = 0
+        McpJsonMode    = ""       # oauth / pat / empty
+        McpJsonExists  = $false
+    }
+
+    # --- winget ---
+    try { $null = winget --version 2>$null; $status.WingetAvailable = $true } catch { }
+
+    # --- git ---
+    if (Test-Command "git") {
+        $status.GitFound = $true
+        $status.GitVersion = (git --version 2>$null) -replace "git version ", ""
+    }
+
+    # --- gh CLI ---
+    $ghPaths = @("gh", "$env:ProgramFiles\GitHub CLI\gh.exe", "${env:ProgramFiles(x86)}\GitHub CLI\gh.exe", "$env:LOCALAPPDATA\GitHubCLI\gh.exe", "$env:USERPROFILE\scoop\shims\gh.exe")
+    foreach ($p in $ghPaths) {
+        if (Test-Command $p) {
+            $status.GhFound = $true
+            $status.GhVersion = (& $p --version 2>$null | Select-Object -First 1) -replace "gh version ", ""
+            $script:EnvState = @{ GhPath = $p; GhFound = $true }
+            $ghPath = $p
+            break
+        }
+    }
+    if ($status.GhFound) {
+        & $ghPath auth status 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $status.GhAuthOk = $true
+            $extList = & $ghPath extension list 2>$null | Out-String
+            if ($extList -match "shuymn/gh-mcp") { $status.GhMcpOk = $true }
+        }
+    }
+
+    # --- Obsidian CLI ---
+    $obsPaths = @("$env:DMSEEK_OBSIDIAN_CLI", "D:\obsidian\Obsidian.com", "$env:LOCALAPPDATA\obsidian\Obsidian.com", "$env:USERPROFILE\AppData\Local\obsidian\Obsidian.com")
+    foreach ($p in $obsPaths) {
+        if ($p -and (Test-Path $p)) {
+            $status.ObsidianFound = $true
+            $status.ObsidianPath = $p
+            break
+        }
+    }
+
+    # --- 认证模式判定 ---
+    $mcpPath = Join-Path $script:RootDir ".mcp.json"
+    if (Test-Path $mcpPath) {
+        $mcpRaw = (Get-Content $mcpPath -Raw -Encoding UTF8).Trim()
+        $status.McpJsonExists = $true
+        if ($mcpRaw -eq "{}" -or $mcpRaw -eq '{"mcpServers":{}}' -or $mcpRaw -eq '{"mcpServers": {}}') {
+            $status.McpJsonMode = "empty"
+        } elseif ($mcpRaw -match '"command"\s*:\s*"gh"') {
+            $status.McpJsonMode = "oauth"
+        } elseif ($mcpRaw -match 'GITHUB_TOKEN') {
+            $status.McpJsonMode = "pat"
+        }
+    }
+
+    # --- 当前实际认证模式 ---
+    # .mcp.json 是用户选择的权威来源；为空时才回退到环境探测
+    $existingPAT = $env:GITHUB_TOKEN
+    if (-not $existingPAT) { $existingPAT = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN", "User") }
+    if ($status.McpJsonMode -ne "empty") {
+        # .mcp.json 已配置 → 以 .mcp.json 为准（用户显式选择）
+        $status.AuthMode = $status.McpJsonMode
+    } elseif ($status.GhFound -and $status.GhAuthOk -and $status.GhMcpOk) {
+        $status.AuthMode = "oauth"
+    } elseif ($existingPAT) {
+        $status.AuthMode = "pat"
+    } else {
+        $status.AuthMode = "none"
+    }
+
+    # --- .mcp.json 与认证模式一致性 ---
+    if ($status.AuthMode -eq "none" -or $status.McpJsonMode -eq "empty") {
+        $status.AuthMcpConsistent = $true  # 未配置时不标记不一致
+    } elseif ($status.AuthMode -ne $status.McpJsonMode) {
+        $status.AuthMcpConsistent = $false
+    }
+
+    # --- repos.json ---
+    $reposPath = Join-Path $script:RootDir ".claude\repos.json"
+    if (Test-Path $reposPath) {
+        try {
+            $reposConfig = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($reposConfig.repos) {
+                $props = $reposConfig.repos.PSObject.Properties
+                $status.RepoCount = $props.Count
+                foreach ($prop in $props) {
+                    if ($prop.Value.local -and $prop.Value.local.path) { $status.RepoLocalCount++ }
+                    else { $status.RepoRemoteOnlyCount++ }
+                    if ($prop.Value.kb) {
+                        $status.KbVaultTotal++
+                        $vaultPath = Join-Path $script:RootDir $prop.Value.kb.path
+                        if ((Test-Path $vaultPath) -and (Test-Path (Join-Path $vaultPath ".obsidian\.dmseek-init"))) {
+                            $status.KbVaultDone++
+                        }
+                    }
+                }
+            }
+        } catch { }
+    }
+
+    return $status
+}
+
+function Show-Status($s) {
+    Write-Host ("`n" + "=" * 60) -ForegroundColor Cyan
+    Write-Host "  dm-seek 初始化状态" -ForegroundColor Cyan
+    Write-Host ("=" * 60) -ForegroundColor Cyan
+
+    # 环境
+    $gitIcon = if ($s.GitFound) { "[OK]" } else { "[MISS]" }
+    $gitStr = if ($s.GitFound) { "git $($s.GitVersion)" } else { "未安装" }
+    $ghIcon = if ($s.GhFound) { "[OK]" } else { "[MISS]" }
+    $ghStr = if ($s.GhFound) { "gh $($s.GhVersion)" } else { "未安装" }
+    $obsIcon = if ($s.ObsidianFound) { "[OK]" } else { "[WARN]" }
+    $obsStr = if ($s.ObsidianFound) { $s.ObsidianPath } else { "未找到" }
+
+    Write-Host ("  git:       $gitIcon $gitStr") -ForegroundColor $(if($s.GitFound){'Green'}else{'Red'})
+    Write-Host ("  gh CLI:    $ghIcon $ghStr") -ForegroundColor $(if($s.GhFound){'Green'}else{'Yellow'})
+    Write-Host ("  Obsidian:  $obsIcon $obsStr") -ForegroundColor $(if($s.ObsidianFound){'Green'}else{'Yellow'})
+
+    # 认证
+    $authStr = switch ($s.AuthMode) {
+        "oauth" { "OAuth (gh CLI + gh-mcp)" }
+        "pat"   { "PAT (GITHUB_TOKEN)" }
+        default { "未配置" }
+    }
+    $authColor = if ($s.AuthMode -eq "none") { "Red" } else { "Green" }
+    Write-Host ("  GitHub:    $($s.AuthMode.ToUpper()) — $authStr") -ForegroundColor $authColor
+
+    # .mcp.json 一致性
+    $mcpStr = if ($s.McpJsonMode -eq "empty") { "空（待生成）" } else { $s.McpJsonMode.ToUpper() }
+    $mcpConsistent = if ($s.AuthMcpConsistent) { "[OK]" } else { "[WARN]" }
+    $mcpColor = if ($s.AuthMcpConsistent) { "Green" } else { "Yellow" }
+    Write-Host ("  .mcp.json: $mcpConsistent $mcpStr") -ForegroundColor $mcpColor
+    if (-not $s.AuthMcpConsistent) {
+        Write-Host ("            [WARN] .mcp.json 与认证模式不一致——请运行 [5] 更新") -ForegroundColor Yellow
+    }
+
+    # 仓库
+    $repoStr = "$($s.RepoCount) 个仓库 ($($s.RepoLocalCount) 有本地, $($s.RepoRemoteOnlyCount) 仅远端)"
+    $repoColor = if ($s.RepoCount -gt 0) { "Green" } else { "Yellow" }
+    Write-Host ("  repos.json: $repoStr") -ForegroundColor $repoColor
+
+    # KB vault
+    if ($s.RepoCount -gt 0) {
+        $kbStr = "$($s.KbVaultDone)/$($s.KbVaultTotal) 已初始化"
+        $kbColor = if ($s.KbVaultDone -eq $s.KbVaultTotal -and $s.KbVaultTotal -gt 0) { "Green" } else { "Yellow" }
+        Write-Host ("  KB vault:   $kbStr") -ForegroundColor $kbColor
+    }
+
+    Write-Host ("=" * 60) -ForegroundColor Cyan
+}
+
+function Show-MainMenu($s) {
+    Write-Host ""
+    Write-Host "  操作：" -ForegroundColor White
+    Write-Host "    [1] 重新探测环境" -ForegroundColor White
+    Write-Host "    [2] 配置 GitHub 认证 (当前: $($s.AuthMode.ToUpper()))" -ForegroundColor White
+    Write-Host "    [3] 管理仓库配置 ($($s.RepoCount) 个仓库)" -ForegroundColor White
+    Write-Host "    [4] 初始化 KB Vault ($($s.KbVaultDone)/$($s.KbVaultTotal))" -ForegroundColor White
+    Write-Host "    [5] 生成 .mcp.json (当前: $($s.McpJsonMode.ToUpper()))" -ForegroundColor White
+    Write-Host "    [6] 连通性自检" -ForegroundColor White
+    Write-Host "    [0] 退出" -ForegroundColor White
+    Write-Host ""
+    $choice = Read-Host "  选择"
+    return $choice.Trim()
+}
+
+# ============================================================
 # Phase 1: 环境探测
 # ============================================================
 
@@ -205,6 +412,12 @@ function Invoke-Phase1 {
 # ============================================================
 
 function Invoke-Phase2($env) {
+    # 若无传入 env（菜单模式），自动探测
+    if (-not $env) { $env = Get-InitStatus; $env.GhPath = if ($env.GhFound) { "gh" } else { $null }; $env.WingetAvailable = $env.WingetAvailable }
+
+    # 记录切换前的认证模式
+    $prevMode = (Get-InitStatus).AuthMode
+
     Write-Banner "Phase 2/6: GitHub 认证"
 
     $auth = @{ Mode = ""; PAT = $null }
@@ -349,6 +562,10 @@ function Invoke-Phase2($env) {
         }
     }
 
+    # 计算是否变更了认证模式
+    $newMode = (Get-InitStatus).AuthMode
+    $auth.ModeChanged = ($prevMode -ne "none" -and $prevMode -ne $newMode)
+
     Write-Info ""
     return $auth
 }
@@ -358,6 +575,15 @@ function Invoke-Phase2($env) {
 # ============================================================
 
 function Invoke-Phase3($env, $auth) {
+    # 若无传入参数（菜单模式），自动探测
+    if (-not $env) { $env = Get-InitStatus; $env.GhPath = if ($env.GhFound) { "gh" } else { $null } }
+    if (-not $auth) { $auth = @{ Mode = (Get-InitStatus).AuthMode } }
+    # 尝试从环境变量读取 PAT
+    if ($auth.Mode -eq "pat" -and -not $auth.PAT) {
+        $auth.PAT = $env:GITHUB_TOKEN
+        if (-not $auth.PAT) { $auth.PAT = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN", "User") }
+    }
+
     Write-Banner "Phase 3/6: 仓库配置"
 
     $repos = @{}
@@ -792,6 +1018,29 @@ function Invoke-Phase3($env, $auth) {
 # ============================================================
 
 function Invoke-Phase4($repos) {
+    # 若无传入 repos（菜单模式），从 repos.json 加载
+    if (-not $repos) {
+        $repos = @{}
+        $reposPath = Join-Path $script:RootDir ".claude\repos.json"
+        if (Test-Path $reposPath) {
+            try {
+                $existing = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($existing.repos) {
+                    $existing.repos.PSObject.Properties | ForEach-Object {
+                        $repos[$_.Name] = @{
+                            local = if ($_.Value.local) { @{ path = $_.Value.local.path } } else { $null }
+                            remote = @{
+                                owner = $_.Value.remote.owner
+                                repo = $_.Value.remote.repo
+                                branch = $_.Value.remote.branch
+                            }
+                        }
+                    }
+                }
+            } catch { }
+        }
+    }
+
     Write-Banner "Phase 4/6: KB Vault 初始化"
 
     if ($repos.Count -eq 0) {
@@ -803,40 +1052,6 @@ function Invoke-Phase4($repos) {
     $kbDir = Join-Path $script:RootDir "dm-kbs"
     if (-not (Test-Path $kbDir)) {
         New-Item -ItemType Directory -Path $kbDir -Force | Out-Null
-    }
-
-    # ---- 下载 Knowlery 插件（所有 vault 共享一份） ----
-    $knowleryCache = Join-Path $kbDir ".knowlery-cache"
-    $knowleryReady = $false
-    if (-not (Test-Path $knowleryCache)) {
-        Write-Info "  下载 Knowlery 插件..."
-        try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/JayJiangCT/knowlery/releases/latest" -TimeoutSec 15
-            New-Item -ItemType Directory -Path $knowleryCache -Force | Out-Null
-            foreach ($file in @("main.js", "manifest.json", "styles.css")) {
-                $asset = $release.assets | Where-Object { $_.name -eq $file }
-                if ($asset) {
-                    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile (Join-Path $knowleryCache $file) -TimeoutSec 30
-                }
-            }
-            # 验证三文件齐全
-            $allOk = $true
-            foreach ($f in @("main.js", "manifest.json", "styles.css")) {
-                if (-not (Test-Path (Join-Path $knowleryCache $f))) { $allOk = $false; break }
-            }
-            if ($allOk) {
-                $knowleryReady = $true
-                Write-Success "  Knowlery 插件下载完成"
-            } else {
-                Write-Warn "  Knowlery 下载不完整，将跳过自动安装"
-            }
-        } catch {
-            Write-Warn "  Knowlery 下载失败（网络原因或 GitHub 不可达）: $_"
-        }
-    } else {
-        $knowleryReady = $true
-        Write-Info "  Knowlery 插件缓存已存在"
     }
 
     # ---- 注册到 Obsidian ----
@@ -901,20 +1116,6 @@ function Invoke-Phase4($repos) {
         }
         @{} | ConvertTo-Json | Out-File -FilePath (Join-Path $obsidianDir "app.json") -Encoding UTF8 -Force
 
-        # 安装 Knowlery 插件
-        if ($knowleryReady) {
-            $pluginDir = Join-Path $obsidianDir "plugins\knowlery"
-            if (-not (Test-Path $pluginDir)) {
-                New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
-                Copy-Item (Join-Path $knowleryCache "main.js") $pluginDir -Force
-                Copy-Item (Join-Path $knowleryCache "manifest.json") $pluginDir -Force
-                Copy-Item (Join-Path $knowleryCache "styles.css") $pluginDir -Force
-            }
-        }
-
-        # 预写 community-plugins.json
-        @("knowlery") | ConvertTo-Json | Out-File -FilePath (Join-Path $obsidianDir "community-plugins.json") -Encoding UTF8 -Force
-
         # 标记已初始化
         "setup.ps1 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $initMarker -Encoding UTF8 -Force
         $created += $slug
@@ -945,18 +1146,13 @@ function Invoke-Phase4($repos) {
     # ---- 汇总 ----
     if ($created.Count -gt 0) {
         Write-Success "  已创建 vault: $($created -join ', ')"
-        if ($knowleryReady) {
-            Write-Success "  Knowlery 插件已预装，community-plugins.json 已配置"
-        }
         if ($registeredCount -gt 0) {
             Write-Success "  已注册 $registeredCount 个 vault 到 Obsidian"
         }
         Write-Info ""
         Write-Info "  ┌─────────────────────────────────────────────────────┐"
-        Write-Info "  │  下一步（每个 vault 只需做一次）:                      │"
-        Write-Info "  │  1. 打开 Obsidian → 选择 {repo}_kb vault              │"
-        Write-Info "  │  2. Settings → Community plugins → Turn on           │"
-        Write-Info "  │  3. Knowlery 自动初始化 vault 结构                    │"
+        Write-Info "  │  下一步: 运行 KB-init 生成概念索引                    │"
+        Write-Info "  │  /kb-init scope=all                                 │"
         Write-Info "  └─────────────────────────────────────────────────────┘"
     }
     if ($skipped.Count -gt 0) {
@@ -966,10 +1162,6 @@ function Invoke-Phase4($repos) {
         Write-Warn "  Obsidian 未安装或从未启动——vault 已创建但未注册"
         Write-Warn "  安装 Obsidian 后手动打开 dm-kbs/{repo}_kb/"
     }
-    if (-not $knowleryReady) {
-        Write-Warn "  Knowlery 未自动安装——请在 Obsidian 中搜索安装 Knowlery 插件"
-    }
-
     Write-Info ""
 }
 
@@ -978,41 +1170,68 @@ function Invoke-Phase4($repos) {
 # ============================================================
 
 function Invoke-Phase5($auth) {
+    # 若无传入 auth（菜单模式），自动探测
+    if (-not $auth -or -not $auth.Mode) {
+        $status = Get-InitStatus
+        $auth = @{ Mode = $status.AuthMode }
+        if ($auth.Mode -eq "pat") {
+            $auth.PAT = $env:GITHUB_TOKEN
+            if (-not $auth.PAT) { $auth.PAT = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN", "User") }
+        }
+    }
+
     Write-Banner "Phase 5/6: 配置生成"
+
+    if ($auth.Mode -eq "none") {
+        Write-Warn ".mcp.json 无法生成：GitHub 认证未配置。请先运行 [2] 配置 GitHub 认证。"
+        Write-Info ""
+        return
+    }
 
     $mcpPath = Join-Path $script:RootDir ".mcp.json"
 
-    # 已有 .mcp.json 且非空 → 保留
+    # 已存在非空 .mcp.json → 检查是否与当前认证模式一致
+    $currentMcpMode = ""
     if ((Test-Path $mcpPath) -and ((Get-Content $mcpPath -Raw -Encoding UTF8).Trim() -ne "{}")) {
-        Write-Warn ".mcp.json 已存在且非空，保留现有配置不覆盖"
-    } else {
-        if ($auth.Mode -eq "oauth") {
-            $mcpJson = @{
-                mcpServers = @{
-                    github = @{
-                        command = "gh"
-                        args = @("mcp")
-                        env = @{ GITHUB_READ_ONLY = "1" }
-                    }
+        $mcpRaw = Get-Content $mcpPath -Raw -Encoding UTF8
+        if ($mcpRaw -match '"command"\s*:\s*"gh"') { $currentMcpMode = "oauth" }
+        elseif ($mcpRaw -match 'GITHUB_TOKEN') { $currentMcpMode = "pat" }
+        if ($currentMcpMode -eq $auth.Mode) {
+            Write-Warn ".mcp.json 已存在且与当前认证模式一致（$($auth.Mode)），无需覆盖"
+            Write-Info ""
+            return
+        } else {
+            Write-Warn ".mcp.json 当前为 $currentMcpMode 模式，与认证模式 $($auth.Mode) 不一致——覆盖更新"
+        }
+    }
+
+    # .mcp.json 不存在 / 为空 / 模式不匹配 → 生成新的
+    if ($auth.Mode -eq "oauth") {
+        $mcpJson = @{
+            mcpServers = @{
+                github = @{
+                    command = "gh"
+                    args = @("mcp")
+                    env = @{ GITHUB_READ_ONLY = "1" }
                 }
             }
-        } else {
-            $mcpJson = @{
-                mcpServers = @{
-                    github = @{
-                        type = "http"
-                        url = "https://api.githubcopilot.com/mcp"
-                        headers = @{
-                            Authorization = "Bearer `${GITHUB_TOKEN}"
-                            "X-MCP-Readonly" = "true"
-                        }
+        }
+    } else {
+        $mcpJson = @{
+            mcpServers = @{
+                github = @{
+                    type = "http"
+                    url = "https://api.githubcopilot.com/mcp"
+                    headers = @{
+                        Authorization = "Bearer `${GITHUB_TOKEN}"
+                        "X-MCP-Readonly" = "true"
                     }
                 }
             }
         }
-        $mcpJson | ConvertTo-Json -Depth 3 | Out-File -FilePath $mcpPath -Encoding UTF8 -Force
-        Write-Success ".mcp.json 已生成（$($auth.Mode) 模式）"
     }
+    $mcpJson | ConvertTo-Json -Depth 3 | Out-File -FilePath $mcpPath -Encoding UTF8 -Force
+    Write-Success ".mcp.json 已生成（$($auth.Mode) 模式）"
 
     # 校验
     $files = @(
@@ -1035,6 +1254,20 @@ function Invoke-Phase5($auth) {
 # ============================================================
 
 function Invoke-Phase6($env, $auth, $repos) {
+    # 若无传入参数（菜单模式），自动探测
+    if (-not $env) { $env = Get-InitStatus; $env.GhPath = if ($env.GhFound) { "gh" } else { $null }; $env.ObsidianPath = $env.ObsidianPath }
+    if (-not $auth) { $auth = @{ Mode = (Get-InitStatus).AuthMode } }
+    if (-not $repos) {
+        $repos = @{}
+        $reposPath = Join-Path $script:RootDir ".claude\repos.json"
+        if (Test-Path $reposPath) {
+            try {
+                $existing = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($existing.repos) { $existing.repos.PSObject.Properties | ForEach-Object { $repos[$_.Name] = $_.Value } }
+            } catch { }
+        }
+    }
+
     Write-Banner "Phase 6/6: 连通性自检"
 
     # GitHub
@@ -1089,37 +1322,85 @@ function Invoke-Phase6($env, $auth, $repos) {
 # ============================================================
 
 function Main {
-    Write-Host @"
-[36m
-  ╔══════════════════════════════════════════════════╗
-  ║              dm-seek（马冬梅计划）                  ║
-  ║           Windows 一键初始化脚本                    ║
-  ╚══════════════════════════════════════════════════╝
-[0m
-"@
+    Write-Host "`n  ╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "  ║              dm-seek（马冬梅计划）                  ║" -ForegroundColor Cyan
+    Write-Host "  ║           Windows 一键初始化脚本                    ║" -ForegroundColor Cyan
+    Write-Host "  ╚══════════════════════════════════════════════════╝`n" -ForegroundColor Cyan
 
     Write-Info "运行目录: $script:RootDir"
     Write-Info ""
 
-    # Phase 1
-    $env = Invoke-Phase1
+    # --- 命令行参数：-Auto 全量执行（兼容旧用法）---
+    if ($Auto) {
+        Write-Info "全量执行模式：依次运行 Phase 1-6..."
+        $env = Invoke-Phase1
+        $auth = Invoke-Phase2 $env
+        $repos = Invoke-Phase3 $env $auth
+        Invoke-Phase4 $repos
+        Invoke-Phase5 $auth
+        Invoke-Phase6 $env $auth $repos
+        Read-Host "按回车键退出"
+        return
+    }
 
-    # Phase 2
-    $auth = Invoke-Phase2 $env
+    # --- 命令行参数：-Phase N 直接跳转 ---
+    if ($Phase) {
+        $env = $null; $auth = $null; $repos = $null
+        switch ($Phase) {
+            "1" { $script:EnvState = Invoke-Phase1 }
+            "2" { $script:AuthState = Invoke-Phase2; if ($script:AuthState.ModeChanged) { Invoke-Phase5 $script:AuthState } }
+            "3" { Invoke-Phase3 }
+            "4" { Invoke-Phase4 }
+            "5" { Invoke-Phase5 }
+            "6" { Invoke-Phase6 }
+            default { Write-ErrorMsg "无效 Phase: $Phase（有效值: 1-6）" }
+        }
+        Read-Host "按回车键退出"
+        return
+    }
 
-    # Phase 3
-    $repos = Invoke-Phase3 $env $auth
+    # --- 交互菜单模式（默认）---
+    do {
+        $status = Get-InitStatus
+        Show-Status $status
+        $choice = Show-MainMenu $status
 
-    # Phase 4
-    Invoke-Phase4 $repos
-
-    # Phase 5
-    Invoke-Phase5 $auth
-
-    # Phase 6
-    Invoke-Phase6 $env $auth $repos
-
-    Read-Host "按回车键退出"
+        switch ($choice) {
+            "1" {
+                $script:EnvState = Invoke-Phase1
+            }
+            "2" {
+                $script:AuthState = Invoke-Phase2 $script:EnvState
+                # Phase 2 切换认证模式 → 自动写入 .mcp.json
+                if ($script:AuthState.ModeChanged -and $script:AuthState.Mode -ne "none") {
+                    Write-Info ""
+                    Write-Warn "认证模式已变更，自动更新 .mcp.json..."
+                    Invoke-Phase5 $script:AuthState
+                }
+            }
+            "3" {
+                $script:ReposState = Invoke-Phase3 $script:EnvState $script:AuthState
+            }
+            "4" {
+                Invoke-Phase4 $script:ReposState
+            }
+            "5" {
+                Invoke-Phase5 $script:AuthState
+            }
+            "6" {
+                Invoke-Phase6 $script:EnvState $script:AuthState $script:ReposState
+            }
+            "0" {
+                Write-Info "退出。"
+                break
+            }
+            default {
+                if ($choice) {
+                    Write-Warn "无效选择: $choice"
+                }
+            }
+        }
+    } while ($true)
 }
 
 Main

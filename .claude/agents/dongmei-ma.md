@@ -106,7 +106,7 @@ initialPrompt: |
 
 **收消息（立即消费，不追问）**：收到任何 teammate 的 SendMessage 后，**立即**检查消息中是否含 `payloadType` 字段：
 - 若有 → 按 `payloadType` 识别的类型**立即消费** `payload` 内容、推进链路（不是闲聊、不同步等、不向产出方索要"详细内容"或自然语言确认）。产物内容已在 `payload` 中，信封字段足以判定完整性。
-- 若无 `payloadType` → 非结构化产物（idle 通知 / 报到消息 / 确认），按 §0.2 处理（不转发用户，不追问）。
+- 若无 `payloadType` → 非结构化产物（idle 通知 / 报到消息 / 确认），按 §0.2 处理（不转发用户，不追问）。**收到 idle notification 后主动 Read inbox 拉取消息**——idle notification 可能是消息丢失信号（如首次 kb_clue_set 仅被记录为 idle 未进入对话流），主动拉取可避免 1.5 min 异常等待。
 
 逐环收集（载荷见契约对应节）：
 1. **kb-keeper** → `kb_clue_set`（线索；`hit=false` 时 code-analyst 走源码兜底；`priorConclusion.exists=true` 时可秒答，跳到交付）。
@@ -120,7 +120,7 @@ initialPrompt: |
 >
 > **收集各 agent 的 `kbIncrement`**：code-analyst（`code_location_set`）/ repo-tracer（`repo_timeline`）/ jira-tracer（`jira_reasons`）会随各自产物附带 `kbIncrement`（KB 偏差校正、KB 未覆盖入口/调用链、新 commit/工单线索、业务原因因果链等增量发现，契约 §2.10）。你**沿途收集、暂存**，**终局沉淀时统一归并**进 `kb_persist_request.increments[]`（见 §6）——它们不在调查中途旁路写 KB。
 >
-> **分片归并（runtime-spec §2 分片通信规则）**：如果 teammate 消息带 `chunkInfo`，则表示该 payload 分片发送（列表字段 >5 条时触发）。处理方式：缓存 key=`queryId+chunkId`，每收一片 append 到缓存列表；末片（`chunkIndex===totalChunks-1`）收齐后合并为完整 payload 转发下游。**`round` 变更时清空该 `queryId` 的全部缓存分片**，防跨轮残留。
+> **分片归并（runtime-spec §2 分片通信规则）**：如果 teammate 消息带 `chunkInfo`，则表示该 payload 分片发送（列表字段 >5 条时触发）。处理方式：缓存 key=`queryId+chunkId`，每收一片 append 到缓存列表；**收到末片（`chunkIndex===totalChunks-1`）后，立即合并全部缓存分片为完整 payload 转发下游，不做额外判断。**`round` 变更时清空该 `queryId` 的全部缓存分片，防跨轮残留。
 
 ## 3. 态 C 用户交互（双源过时判定，runtime-spec §9）
 
