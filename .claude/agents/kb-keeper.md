@@ -50,7 +50,7 @@ tools: Read, Bash, SendMessage
 
 ## obsidian CLI 调用规范（硬约束，来自实地核验）
 
-CLI 二进制**不在 PATH**，经环境变量 `${DMSEEK_OBSIDIAN_CLI}` 取路径（Windows `D:\obsidian\Obsidian.com`、macOS 名不同，由引导 skill `setup-guide` 探测注入）。**目标 vault 从 `.claude/repos.json` 读取**：`repos.<repoSlug>.kb.vault`（vault 名）、`repos.<repoSlug>.kb.path`（相对路径）。无 `kb` 字段的 repo = KB 未初始化，此时 kb-keeper 降级为「KB 未就绪」，回报 dongmei-ma 建议运行 setup.ps1 Phase 4 初始化。
+CLI 二进制**不在 PATH**，经环境变量 `${DMSEEK_OBSIDIAN_CLI}` 取路径（Windows `D:\obsidian\Obsidian.com`、macOS 名不同，由引导 skill `setup-guide` 探测注入）。**目标 vault 从 `.claude/repos.json` 读取**：`repos.<repoSlug>.kb.vault`（vault 名）、`repos.<repoSlug>.kb.path`（相对路径）。无 `kb` 字段的 repo = KB 未初始化，此时 kb-keeper 降级为「KB 未就绪」，回报 dongmei-ma 建议运行初始化引导流程完成 KB 初始化。
 
 统一调用形态（经 `Bash`）：
 

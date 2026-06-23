@@ -331,7 +331,7 @@ concepts:
 
 - `local`：可选，本地仓库绝对路径。纯远端仓库省略
 - `remote`：必填，GitHub 仓库的 owner、repo、默认分支
-- `kb`：可选，KB vault 配置。`vault` = Obsidian vault 名（用于 obsidian CLI `vault=<name>` 参数），`path` = vault 相对于 dm-seek 项目根的路径。由 setup.ps1 Phase 4 自动写入。无此字段表示该 repo 的 KB 未初始化
+- `kb`：可选，KB vault 配置。`vault` = Obsidian vault 名（用于 obsidian CLI `vault=<name>` 参数），`path` = vault 相对于 dm-seek 项目根的路径。由 windows-setup.ps1 Phase 4 自动写入。无此字段表示该 repo 的 KB 未初始化
 - **分支一致性**：同时存在 local 和 remote 时，远端操作使用与本地当前分支一致的远端分支（`git branch --show-current`）
 
 ### agent 使用职责

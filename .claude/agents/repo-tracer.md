@@ -123,7 +123,7 @@ reposInvolved 条目 → 是对象(含owner/repo)？→ 直接采用
 | `remote.owner` | string | 是 | GitHub 组织或用户名 |
 | `remote.repo` | string | 是 | GitHub 仓库名 |
 | `remote.branch` | string | 是 | 远端默认分支（纯远端仓库时用作 `sha` 参数） |
-| `kb` | object | 否 | KB vault 配置。由 setup.ps1 Phase 4 写入。无此字段表示 KB 未初始化 |
+| `kb` | object | 否 | KB vault 配置。由初始化引导流程写入。无此字段表示 KB 未初始化 |
 | `kb.vault` | string | 否 | Obsidian vault 名（用于 obsidian CLI `vault=<name>` 参数） |
 | `kb.path` | string | 否 | vault 相对路径（相对于 dm-seek 项目根） |
 

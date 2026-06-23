@@ -14,7 +14,7 @@ param(
 )
 
 # 最早输出——确保用户能看到脚本已启动
-Write-Host "dm-seek setup.ps1 启动中..." -ForegroundColor Cyan
+Write-Host "dm-seek windows-setup.ps1 启动中..." -ForegroundColor Cyan
 if ($Phase) { Write-Host "  参数: -Phase $Phase" -ForegroundColor Cyan }
 if ($Auto)  { Write-Host "  参数: -Auto（全量执行）" -ForegroundColor Cyan }
 
@@ -239,7 +239,7 @@ function Get-InitStatus {
                     if ($prop.Value.kb) {
                         $status.KbVaultTotal++
                         $vaultPath = Join-Path $script:RootDir $prop.Value.kb.path
-                        if ((Test-Path $vaultPath) -and (Test-Path (Join-Path $vaultPath ".obsidian\.dmseek-init"))) {
+                        if (Test-Path $vaultPath) {
                             $status.KbVaultDone++
                         }
                     }
@@ -310,6 +310,7 @@ function Show-MainMenu($s) {
     Write-Host "    [4] 初始化 KB Vault ($($s.KbVaultDone)/$($s.KbVaultTotal))" -ForegroundColor White
     Write-Host "    [5] 生成 .mcp.json (当前: $($s.McpJsonMode.ToUpper()))" -ForegroundColor White
     Write-Host "    [6] 连通性自检" -ForegroundColor White
+    Write-Host "    [7] 检查仓库更新" -ForegroundColor White
     Write-Host "    [0] 退出" -ForegroundColor White
     Write-Host ""
     $choice = Read-Host "  选择"
@@ -676,16 +677,53 @@ function Invoke-Phase3($env, $auth) {
                         if ($bSel -match "^\d+$") {
                             $bIdx = [int]$bSel - 1
                             if ($bIdx -ge 0 -and $bIdx -lt $branches.Count) {
+                                $oldBranch = $r.remote.branch
                                 $r.remote.branch = $branches[$bIdx]
                                 Write-Success "  $slug 分支已更新: $($branches[$bIdx])"
+                                # 如果本地仓库存在，真正 checkout 到新分支
+                                if ($r.local -and $r.local.path -and (Test-Path (Join-Path $r.local.path ".git"))) {
+                                    Write-Info "    切换本地仓库分支: $oldBranch -> $($r.remote.branch) ..."
+                                    $prevEAP = $ErrorActionPreference
+                                    $ErrorActionPreference = "Continue"
+                                    git -C $r.local.path fetch origin $r.remote.branch 2>$null >$null
+                                    if ($LASTEXITCODE -ne 0) {
+                                        Write-Warn "    fetch 失败（分支可能不存在或网络问题）"
+                                    } else {
+                                        git -C $r.local.path checkout $r.remote.branch 2>$null >$null
+                                        if ($LASTEXITCODE -ne 0) {
+                                            Write-Warn "    checkout 失败（可能有未提交的本地改动）"
+                                        } else {
+                                            Write-Success "    已切换到 $($r.remote.branch)"
+                                        }
+                                    }
+                                    $ErrorActionPreference = $prevEAP
+                                }
                             }
                         }
                     } else {
                         Write-Warn "  无法获取远端分支列表（无本地仓库且 gh CLI 不可用）"
                         $newBranch = Read-Host "  手动输入新分支名（当前: $($r.remote.branch)，回车保持）"
                         if ($newBranch) {
+                            $oldBranch = $r.remote.branch
                             $r.remote.branch = $newBranch
                             Write-Success "  $slug 分支已更新: $newBranch"
+                            if ($r.local -and $r.local.path -and (Test-Path (Join-Path $r.local.path ".git"))) {
+                                Write-Info "    切换本地仓库分支: $oldBranch -> $newBranch ..."
+                                $prevEAP = $ErrorActionPreference
+                                $ErrorActionPreference = "Continue"
+                                git -C $r.local.path fetch origin $newBranch 2>$null >$null
+                                if ($LASTEXITCODE -ne 0) {
+                                    Write-Warn "    fetch 失败（分支可能不存在或网络问题）"
+                                } else {
+                                    git -C $r.local.path checkout $newBranch 2>$null >$null
+                                    if ($LASTEXITCODE -ne 0) {
+                                        Write-Warn "    checkout 失败（可能有未提交的本地改动）"
+                                    } else {
+                                        Write-Success "    已切换到 $newBranch"
+                                    }
+                                }
+                                $ErrorActionPreference = $prevEAP
+                            }
                         }
                     }
                 }
@@ -979,6 +1017,24 @@ function Invoke-Phase3($env, $auth) {
                                 if ($exitCode -eq 0) {
                                     $resolvedPath = (Resolve-Path $clonePath).Path
                                     $chosen = Get-BranchChoice $env $owner $slug $resolvedPath $branch
+                                    # 如果用户选择的分支与 clone 时不同，切过去
+                                    if ($chosen -ne $branch) {
+                                        Write-Info "    切换分支: $branch -> $chosen ..."
+                                        $prevEAP = $ErrorActionPreference
+                                        $ErrorActionPreference = "Continue"
+                                        git -C $resolvedPath fetch origin $chosen 2>$null >$null
+                                        if ($LASTEXITCODE -ne 0) {
+                                            Write-Warn "    fetch 失败（分支可能不存在或网络问题）"
+                                        } else {
+                                            git -C $resolvedPath checkout $chosen 2>$null >$null
+                                            if ($LASTEXITCODE -ne 0) {
+                                                Write-Warn "    checkout 失败（可能有未提交的本地改动）"
+                                            } else {
+                                                Write-Success "    已切换到 $chosen"
+                                            }
+                                        }
+                                        $ErrorActionPreference = $prevEAP
+                                    }
                                     $repos[$slug] = @{
                                         local = @{ path = $resolvedPath }
                                         remote = @{ owner = $owner; repo = $slug; branch = $chosen }
@@ -1117,7 +1173,7 @@ function Invoke-Phase4($repos) {
         @{} | ConvertTo-Json | Out-File -FilePath (Join-Path $obsidianDir "app.json") -Encoding UTF8 -Force
 
         # 标记已初始化
-        "setup.ps1 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $initMarker -Encoding UTF8 -Force
+        "windows-setup.ps1 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $initMarker -Encoding UTF8 -Force
         $created += $slug
     }
 
@@ -1151,7 +1207,7 @@ function Invoke-Phase4($repos) {
         }
         Write-Info ""
         Write-Info "  ┌─────────────────────────────────────────────────────┐"
-        Write-Info "  │  下一步: 运行 KB-init 生成概念索引                    │"
+        Write-Info "  │  下一步: 运行 KB-init 生成概念索引                      │"
         Write-Info "  │  /kb-init scope=all                                 │"
         Write-Info "  └─────────────────────────────────────────────────────┘"
     }
@@ -1289,11 +1345,18 @@ function Invoke-Phase6($env, $auth, $repos) {
     Write-Info "    1. /plugin install atlassian@claude-plugins-official"
     Write-Info "    2. /mcp → Atlassian → Authenticate → 浏览器 OAuth"
 
-    # Obsidian
+    # Obsidian — 独立重检，不依赖 Phase 1 的缓存结果
     Write-Info "[Obsidian KB]"
-    if ($env.ObsidianPath) {
-        Write-Success "  Obsidian CLI: $($env.ObsidianPath)"
-        [Environment]::SetEnvironmentVariable("DMSEEK_OBSIDIAN_CLI", $env.ObsidianPath, "User")
+    $obsFound = $env.ObsidianPath
+    if (-not $obsFound) {
+        $obsPaths = @("$env:DMSEEK_OBSIDIAN_CLI", "D:\obsidian\Obsidian.com", "$env:LOCALAPPDATA\obsidian\Obsidian.com", "$env:USERPROFILE\AppData\Local\obsidian\Obsidian.com")
+        foreach ($p in $obsPaths) {
+            if ($p -and (Test-Path $p)) { $obsFound = $p; break }
+        }
+    }
+    if ($obsFound) {
+        Write-Success "  Obsidian CLI: $obsFound"
+        [Environment]::SetEnvironmentVariable("DMSEEK_OBSIDIAN_CLI", $obsFound, "User")
         Write-Success "  DMSEEK_OBSIDIAN_CLI 已写入用户环境变量"
     } else {
         Write-Warn "  Obsidian CLI 未找到（KB 功能需手动配置）"
@@ -1318,13 +1381,259 @@ function Invoke-Phase6($env, $auth, $repos) {
 }
 
 # ============================================================
+# 自动扫描：启动时检测 dm-repos/ 和 dm-kbs/ 并补全 repos.json
+# ============================================================
+
+function Invoke-AutoScan {
+    $reposPath = Join-Path $script:RootDir ".claude\repos.json"
+    $repos = @{}
+    $reposChanged = $false
+
+    # 加载现有 repos.json
+    if (Test-Path $reposPath) {
+        try {
+            $existing = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($existing.repos) {
+                $existing.repos.PSObject.Properties | ForEach-Object {
+                    $repos[$_.Name] = @{
+                        local = if ($_.Value.local) { @{ path = $_.Value.local.path } } else { $null }
+                        remote = if ($_.Value.remote) { @{ owner = $_.Value.remote.owner; repo = $_.Value.remote.repo; branch = $_.Value.remote.branch } } else { $null }
+                        kb = if ($_.Value.kb) { @{ vault = $_.Value.kb.vault; path = $_.Value.kb.path } } else { $null }
+                    }
+                }
+            }
+        } catch { }
+    }
+
+    # ---- 扫描 dm-repos/ ----
+    $dmRepos = Join-Path $script:RootDir "dm-repos"
+    if (Test-Path $dmRepos) {
+        $subDirs = Get-ChildItem $dmRepos -Directory -ErrorAction SilentlyContinue
+        foreach ($dir in $subDirs) {
+            $gitDir = Join-Path $dir.FullName ".git"
+            if (-not (Test-Path $gitDir)) { continue }
+
+            $slug = $dir.Name
+            $resolvedPath = $dir.FullName
+
+            # 检查是否已在 repos.json 中（按 local path 匹配）
+            $alreadyTracked = $false
+            foreach ($r in $repos.Values) {
+                if ($r.local -and $r.local.path -eq $resolvedPath) {
+                    $alreadyTracked = $true
+                    break
+                }
+            }
+            if ($alreadyTracked) { continue }
+
+            # 检测远端信息
+            $remoteUrl = $null; $branch = $null
+            try { $remoteUrl = (git -C $resolvedPath remote get-url origin 2>$null) } catch { }
+            try { $branch = (git -C $resolvedPath branch --show-current 2>$null) } catch { }
+            if (-not $branch) { $branch = "main" }
+
+            $owner = ""; $repoName = $slug
+            if ($remoteUrl -match "github\.com[:/](.+)/(.+?)(\.git)?$") {
+                $owner = $Matches[1]
+                $repoName = $Matches[2]
+            }
+
+            # 如果 repos 中已有同名 slug 但无 local path，补全 local
+            if ($repos.ContainsKey($slug) -and -not $repos[$slug].local) {
+                $repos[$slug].local = @{ path = $resolvedPath }
+                if (-not $repos[$slug].remote) {
+                    $repos[$slug].remote = @{ owner = $owner; repo = $repoName; branch = $branch }
+                }
+                $reposChanged = $true
+                Write-Info "  [auto] $slug — 补全本地路径: $resolvedPath"
+            } elseif (-not $repos.ContainsKey($slug)) {
+                $repos[$slug] = @{
+                    local = @{ path = $resolvedPath }
+                    remote = @{ owner = $owner; repo = $repoName; branch = $branch }
+                }
+                $reposChanged = $true
+                Write-Info "  [auto] $slug — 自动发现: $owner/$repoName [$branch]"
+            }
+        }
+    }
+
+    # ---- 扫描 dm-kbs/ ----
+    $dmKbs = Join-Path $script:RootDir "dm-kbs"
+    if (Test-Path $dmKbs) {
+        $vaultDirs = Get-ChildItem $dmKbs -Directory -ErrorAction SilentlyContinue
+        foreach ($vdir in $vaultDirs) {
+            $vaultName = $vdir.Name  # 如 hdr-delivery-project_kb
+            if ($vaultName -notmatch "^(.+)_kb$") { continue }
+            $matchedSlug = $Matches[1]
+
+            # 查找匹配的 repo
+            if ($repos.ContainsKey($matchedSlug)) {
+                if (-not $repos[$matchedSlug].kb) {
+                    $repos[$matchedSlug].kb = @{
+                        vault = $vaultName
+                        path = "dm-kbs/$vaultName"
+                    }
+                    $reposChanged = $true
+                    Write-Info "  [auto] $matchedSlug — 关联 KB vault: $vaultName"
+                }
+            }
+        }
+    }
+
+    # ---- 写入 repos.json ----
+    if ($reposChanged) {
+        $reposDir = Join-Path $script:RootDir ".claude"
+        if (-not (Test-Path $reposDir)) {
+            New-Item -ItemType Directory -Path $reposDir -Force | Out-Null
+        }
+        $reposObj = @{ repos = $repos }
+        $reposObj | ConvertTo-Json -Depth 4 | Out-File -FilePath $reposPath -Encoding UTF8 -Force
+    }
+}
+
+# ============================================================
+# Menu 7: 检查仓库更新
+# ============================================================
+
+function Invoke-UpdateCheck {
+    Write-Banner "检查 dm-repos 仓库更新"
+
+    $reposPath = Join-Path $script:RootDir ".claude\repos.json"
+    if (-not (Test-Path $reposPath)) {
+        Write-Warn "repos.json 不存在，请先运行 [3] 管理仓库配置"
+        Write-Info ""
+        return
+    }
+
+    try {
+        $reposConfig = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        Write-Warn "repos.json 解析失败"
+        Write-Info ""
+        return
+    }
+
+    if (-not $reposConfig.repos) {
+        Write-Warn "repos.json 中无仓库"
+        Write-Info ""
+        return
+    }
+
+    # 遍历所有配置了本地路径的仓库，检查远端更新
+    $repoStatus = @()
+    foreach ($prop in $reposConfig.repos.PSObject.Properties) {
+        $slug = $prop.Name
+        $localPath = if ($prop.Value.local) { $prop.Value.local.path } else { $null }
+        $branch = if ($prop.Value.remote) { $prop.Value.remote.branch } else { "main" }
+
+        if (-not $localPath -or -not (Test-Path (Join-Path $localPath ".git"))) {
+            $repoStatus += @{ Slug=$slug; Path=$localPath; Ok=$false; Behind=0; Ahead=0; Error="本地仓库不可达" }
+            continue
+        }
+
+        try {
+            # fetch 远端
+            $prevEAP = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            git -C $localPath fetch origin $branch 2>$null >$null
+            $ErrorActionPreference = $prevEAP
+        } catch { }
+
+        # 比较本地 HEAD 与 origin/branch 的差异
+        $behind = 0
+        $ahead = 0
+        try {
+            $behind = [int](git -C $localPath rev-list --count HEAD..origin/$branch 2>$null)
+            $ahead  = [int](git -C $localPath rev-list --count origin/$branch..HEAD 2>$null)
+        } catch { }
+
+        if ($LASTEXITCODE -eq 0) {
+            $repoStatus += @{ Slug=$slug; Path=$localPath; Ok=$true; Behind=$behind; Ahead=$ahead; Branch=$branch; Error="" }
+        } else {
+            $repoStatus += @{ Slug=$slug; Path=$localPath; Ok=$false; Behind=0; Ahead=0; Branch=$branch; Error="远端 $branch 不可达" }
+        }
+    }
+
+    # 汇总显示
+    $updatable = @($repoStatus | Where-Object { $_.Ok -and $_.Behind -gt 0 })
+    $errors = @($repoStatus | Where-Object { -not $_.Ok })
+    $current = @($repoStatus | Where-Object { $_.Ok -and $_.Behind -eq 0 })
+
+    Write-Info ""
+    if ($errors.Count -gt 0) {
+        Write-Warn "  不可达:"
+        foreach ($e in $errors) { Write-Warn "    $($e.Slug) — $($e.Error)" }
+    }
+
+    if ($current.Count -gt 0) {
+        Write-Success "  已是最新:"
+        foreach ($c in $current) { Write-Success "    $($c.Slug) [$($c.Branch)]" }
+    }
+
+    if ($updatable.Count -gt 0) {
+        Write-Host "  有待更新:" -ForegroundColor Yellow
+        for ($i = 0; $i -lt $updatable.Count; $i++) {
+            $u = $updatable[$i]
+            Write-Host "    [$($i+1)] $($u.Slug) [$($u.Branch)] — 落后 $($u.Behind) 个提交" -ForegroundColor Yellow
+        }
+
+        Write-Info ""
+        Write-Info "  [A] 一键全部更新"
+        Write-Info "  [#] 输入编号更新单个仓库（逗号分隔多选）"
+        Write-Info "  [回车] 跳过"
+        Write-Info ""
+        $choice = Read-Host "  选择"
+
+        if ($choice -eq "A" -or $choice -eq "a") {
+            $toUpdate = $updatable
+        } elseif ($choice) {
+            $toUpdate = @()
+            $nums = $choice -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "^\d+$" }
+            foreach ($n in $nums) {
+                $idx = [int]$n - 1
+                if ($idx -ge 0 -and $idx -lt $updatable.Count) {
+                    $toUpdate += $updatable[$idx]
+                }
+            }
+        } else {
+            $toUpdate = @()
+        }
+
+        foreach ($u in $toUpdate) {
+            Write-Info "  更新: $($u.Slug) [$($u.Branch)] ..."
+            try {
+                $pullOutput = git -C $u.Path pull origin $u.Branch 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "    $($u.Slug) 更新完成"
+                } else {
+                    Write-Warn "    $($u.Slug) 更新失败: $pullOutput"
+                }
+            } catch {
+                Write-Warn "    $($u.Slug) 更新异常: $_"
+            }
+        }
+
+        if ($toUpdate.Count -eq 0 -and $choice) {
+            Write-Info "  未选择任何仓库，跳过更新"
+        }
+    } elseif ($errors.Count -gt 0 -and $current.Count -eq 0) {
+        Write-Warn "  所有仓库均不可达，无法检查更新"
+    } else {
+        Write-Success "  所有仓库均已是最新"
+    }
+
+    Write-Info ""
+}
+
+# ============================================================
 # Main
 # ============================================================
 
 function Main {
-    Write-Host "`n  ╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "  ║              dm-seek（马冬梅计划）                  ║" -ForegroundColor Cyan
-    Write-Host "  ║           Windows 一键初始化脚本                    ║" -ForegroundColor Cyan
+    Write-Host "`n  " -ForegroundColor Cyan
+    Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "  ║              dm-seek(马冬梅计划)                   ║" -ForegroundColor Cyan
+    Write-Host "  ║            Windows 一键初始化脚本                   ║" -ForegroundColor Cyan
     Write-Host "  ╚══════════════════════════════════════════════════╝`n" -ForegroundColor Cyan
 
     Write-Info "运行目录: $script:RootDir"
@@ -1360,6 +1669,7 @@ function Main {
     }
 
     # --- 交互菜单模式（默认）---
+    Invoke-AutoScan  # 启动时自动扫描 dm-repos/ 和 dm-kbs/
     do {
         $status = Get-InitStatus
         Show-Status $status
@@ -1390,6 +1700,9 @@ function Main {
             "6" {
                 Invoke-Phase6 $script:EnvState $script:AuthState $script:ReposState
             }
+            "7" {
+                Invoke-UpdateCheck
+            }
             "0" {
                 Write-Info "退出。"
                 break
@@ -1403,4 +1716,11 @@ function Main {
     } while ($true)
 }
 
-Main
+try {
+    Main
+} catch {
+    Write-Host "`n脚本异常终止: $_" -ForegroundColor Red
+    Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
+} finally {
+    Read-Host "`n按回车键退出"
+}

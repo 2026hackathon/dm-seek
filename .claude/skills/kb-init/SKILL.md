@@ -11,17 +11,17 @@ description: 马冬梅计划知识库初始化——以 core-ng 的 REST 入口(
 - 用户尚无知识库，或希望对某仓/某服务补充建库。**可选、不设硬性上限**，由用户用 scope 控制范围。
 
 ## 输入参数
-- `repos`：要初始化的仓库（默认全部已配置仓库，多仓**分别**初始化）。**仅处理 repos.json 中已配置 `kb` 字段的仓库**——无 `kb` 表示 KB vault 未创建，需先运行 `setup.ps1` Phase 4。
+- `repos`：要初始化的仓库（默认全部已配置仓库，多仓**分别**初始化）。**仅处理 repos.json 中已配置 `kb` 字段的仓库**——无 `kb` 表示 KB vault 未创建，需先运行 `windows-setup.ps1` Phase 4。
 - `scope`：范围（默认 `all` 全部入口点；可 `service=<名>` / `module=<名>` / `package=<名>` 限定）。
 - `maxDepth`：调用链遍历深度上限（默认到 **Repository/Domain 层**止，防大仓链路爆炸；与 coreng-recognition 规则表中「调用链终点=存储层双形态」对齐）。
 
 ## Vault 定位
 
-**KB vault 位置从 `.claude/repos.json` 读取**（runtime-spec §12）。每个 repo 的 `kb.vault`（Obsidian vault 名）和 `kb.path`（相对路径）由 setup.ps1 Phase 4 自动写入。无 `kb` 字段的 repo 跳过初始化，回报用户运行 `setup.ps1`。
+**KB vault 位置从 `.claude/repos.json` 读取**（runtime-spec §12）。每个 repo 的 `kb.vault`（Obsidian vault 名）和 `kb.path`（相对路径）由 windows-setup.ps1 Phase 4 自动写入。无 `kb` 字段的 repo 跳过初始化，回报用户运行 `windows-setup.ps1`。
 
 ## 流程（单仓；dongmei-ma 编排，逐 agent 调度）
 
-1. **前置校验**：读 `.claude/repos.json`，过滤出含 `kb` 字段的 repo。若 `repos` 参数指定了 repo 但无 `kb` 字段 → 回报用户该 repo 的 KB vault 未创建。若全部无 `kb` → 终止，提示运行 `setup.ps1`。
+1. **前置校验**：读 `.claude/repos.json`，过滤出含 `kb` 字段的 repo。若 `repos` 参数指定了 repo 但无 `kb` 字段 → 回报用户该 repo 的 KB vault 未创建。若全部无 `kb` → 终止，提示运行 `windows-setup.ps1`。
 2. **范围确定**：默认全部入口点；或按 `scope` 限定。
 3. **code-analyst 枚举入口点（种子）**——**REST 两形态都要枚举（硬要求）**：
    - 形态A：`{service}-interface` 模块 `api/` 包的 `*WebService` 接口（`@GET/@POST/@PUT/@PATCH/@DELETE/@Path/@PathParam`，import 自 `core.framework.api.web.service.*`），实现 `{service}/web/*WebServiceImpl`；
