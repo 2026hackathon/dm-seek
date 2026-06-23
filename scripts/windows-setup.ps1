@@ -603,6 +603,7 @@ function Invoke-Phase3($env, $auth) {
                             repo = $_.Value.remote.repo
                             branch = $_.Value.remote.branch
                         }
+                        kb = if ($_.Value.kb) { @{ vault = $_.Value.kb.vault; path = $_.Value.kb.path } } else { $null }
                     }
                 }
                 Write-Info "已加载现有配置: $($repos.Count) 个仓库"
