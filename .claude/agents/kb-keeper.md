@@ -29,7 +29,7 @@ tools: Read, Bash, SendMessage
 4. **KB 初始化时配合**（runtime-spec §8）：沿入口点/调用链做粗粒度建库，并**生成 `concept-map.md` 概念索引**（具体由 `kb-init` skill 驱动）。
 
 完成产出并发送 SendMessage 后，自行 TaskUpdate 将对应任务标记为 completed。
-发送结构化产物（`kb_clue_set` / `kb_persist` 结果）后，主动追加一条纯文本确认消息（如「kb_clue_set for q-xxx round=0 已发送，N 条线索」），供 dongmei-ma 确认消息已送达。
+发送结构化产物后，**同时向 main 发一条 STATUS**（纯文本，≤300字）。
 
 ## 边界声明（软隔离层，强制；runtime-spec §4.2 / 契约 §5）
 
@@ -46,7 +46,7 @@ tools: Read, Bash, SendMessage
 
 **标准信封（runtime-spec §2，硬约束）**：
 - **收**：从 dongmei-ma 收到的 `query_plan` / `kb_persist_request` 消息含标准信封（`queryId`/`round`/`from`/`to`/`payloadType`/`payload`），据此识别并消费。
-- **发**：产出 `kb_clue_set` 时，SendMessage 必须带标准信封——`from: "kb-keeper"`、`to: "main"`、`payloadType: "kb_clue_set"`、透传 `queryId`/`round`（不改写不自增）。**把 `kb_clue_set` 的完整内容放入 `payload`**（含 `hit`/`candidateModules`/`priorConclusion`/`clues[]`/`kbIncrement` 等全部字段）。不使用信封的纯文本消息（idle/报到/确认）不在此限。
+- **发**：产出 `kb_clue_set` 时，SendMessage 必须带标准信封——`from: "kb-keeper"`、`to: "code-analyst"`、`payloadType: "kb_clue_set"`、透传 `queryId`/`round`（不改写不自增）。**把 `kb_clue_set` 的完整内容放入 `payload`**（含 `hit`/`candidateModules`/`priorConclusion`/`clues[]`/`kbIncrement` 等全部字段）。不使用信封的纯文本消息（idle/报到/确认）不在此限。
 
 ## obsidian CLI 调用规范（硬约束，来自实地核验）
 

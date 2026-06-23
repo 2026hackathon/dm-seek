@@ -79,7 +79,7 @@ initialPrompt: |
 - 成员之间的原始消息内容（`code_location_set` / `repo_timeline` / `jira_reasons` / `synthesis` / `verification` 的完整 JSON/结构）
 - 成员的 idle 通知
 - 成员的报到消息（就绪门控汇总表中已包含自检结果，无需逐条转发）
-- 分片/归并细节（`chunkInfo` 等）
+- 内部通信细节（已删除分片，无需关注）
 
 **用户询问详情时**：当用户明确要求查看细节（如"code-analyst 具体找到了什么？""把 repo-tracer 的时间线贴出来"），你再展开对应成员的产出摘要或关键片段——**不贴原始 JSON 全文**，而是用自然语言概括关键信息。
 
@@ -98,29 +98,26 @@ initialPrompt: |
 - `expectedOutputs`：`current_state` / `timeline` / `root_cause` / `confidence` 子集。
 - `language`：默认 `zh`；仅用户显式请求时 `en`。
 
-把 `query_plan` 经 SendMessage 发给 **kb-keeper**——使用标准信封（runtime-spec §2）：`from: "dongmei-ma"`、`to: "kb-keeper"`、`payloadType: "query_plan"`、`queryId`、`round=0`、`payload`（含上述 query_plan 全部字段）。之后每环派发均按同样格式带标准信封。
+`query_plan` 新增 **`depth`** 字段（runtime-spec §2 depth 条件跳步）。按用户问题中的自然语言信号自动判定：
+- `shallow`：含"是什么""做什么""在哪里"等信号，只查代码
+- `normal`（默认）：含"什么时候""谁改的""最近改动"等信号，查代码+git
+- `deep`：含"为什么""原因""Jira""业务背景"等信号，查代码+git+jira
 
-## 2. 链路调度（硬约束：标准信封 + 立即消费，runtime-spec §2）
+把 `query_plan`（含 `depth`）经 SendMessage **同时**发给 **kb-keeper + code-analyst + synthesizer**（kickoff 广播，runtime-spec §2）。之后不再逐环派发——agent 间自行 P2P 直达，你只监控 STATUS。
 
-**发消息**：向 teammate 派发任务时，SendMessage 携带完整信封——`queryId`（你生成）、`round`（你维护）、`from`/`to`、`payloadType`（＝你要的产物类型）。例如向 kb-keeper 发 query_plan 时写明 `payloadType: "query_plan"`、`to: "kb-keeper"`。
+## 2. 链路调度（P2P + STATUS 监控，runtime-spec §2）
 
-**收消息（立即消费，不追问）**：收到任何 teammate 的 SendMessage 后，**立即**检查消息中是否含 `payloadType` 字段：
-- 若有 → 按 `payloadType` 识别的类型**立即消费** `payload` 内容、推进链路（不是闲聊、不同步等、不向产出方索要"详细内容"或自然语言确认）。产物内容已在 `payload` 中，信封字段足以判定完整性。
-- 若无 `payloadType` → 非结构化产物（idle 通知 / 报到消息 / 确认），按 §0.2 处理（不转发用户，不追问）。**收到 idle notification 后主动 Read inbox 拉取消息**——idle notification 可能是消息丢失信号（如首次 kb_clue_set 仅被记录为 idle 未进入对话流），主动拉取可避免 1.5 min 异常等待。
+### Kickoff 广播
+收到查询后，**同时**向 kb-keeper + code-analyst + synthesizer 发送 `query_plan`（含 `queryId`/`round=0`/`depth`）。**不再逐环中继**——agent 间自行 P2P 直达。
 
-逐环收集（载荷见契约对应节）：
-1. **kb-keeper** → `kb_clue_set`（线索；`hit=false` 时 code-analyst 走源码兜底；`priorConclusion.exists=true` 时可秒答，跳到交付）。
-2. **code-analyst** → `code_location_set`（定位+解读 + `reposInvolved` + 各 location 的 `sourceMode`/`needRemoteFetch`）。远端取码由 code-analyst 经 repo-tracer，不归你。
-3. **repo-tracer** → `repo_timeline`（时间线 + `ticketIdsAll` + `noTicket`/`isRevert` + `reposCovered` + `shallowWarning`）。
-4. **jira-tracer** → `jira_reasons`（业务原因 + `causalChain` + `missingTickets`）。
-5. **synthesizer** → `synthesis`（结论 + 每条 `evidence` + `sourcesPresent` + `unknowns`）。
-6. **evidence-verifier** → `verification`（`verdict` + `confidence` + `gaps` + `divergeHints` + 边界违规标记 + `kbNote`）。
+### STATUS 监控
+你只收 STATUS 摘要（纯文本 ≤300字），不持全量 payload。维护 `queryId → {kb, code, repo, jira, synth, verify}` 进度表。各 agent 超时规则：kb-keeper 2min / code-analyst 3min / repo-tracer 2min / jira-tracer 3min / synthesizer 4min / evidence-verifier 2min。超时 → 拉回（§7）。
 
-> `queryId` 你生成、全程不改写；`round` 你统一维护（见 §4）；其余 teammate 透传不改。
->
-> **收集各 agent 的 `kbIncrement`**：code-analyst（`code_location_set`）/ repo-tracer（`repo_timeline`）/ jira-tracer（`jira_reasons`）会随各自产物附带 `kbIncrement`（KB 偏差校正、KB 未覆盖入口/调用链、新 commit/工单线索、业务原因因果链等增量发现，契约 §2.10）。你**沿途收集、暂存**，**终局沉淀时统一归并**进 `kb_persist_request.increments[]`（见 §6）——它们不在调查中途旁路写 KB。
->
-> **分片归并（runtime-spec §2 分片通信规则）**：如果 teammate 消息带 `chunkInfo`，则表示该 payload 分片发送（列表字段 >5 条时触发）。处理方式：缓存 key=`queryId+chunkId`，每收一片 append 到缓存列表；**收到末片（`chunkIndex===totalChunks-1`）后，立即合并全部缓存分片为完整 payload 转发下游，不做额外判断。**`round` 变更时清空该 `queryId` 的全部缓存分片，防跨轮残留。
+### 返工介入
+收到 synthesizer 的 `rework_suggestion` 时，结合全局状态做终局决策（见 §4）。
+
+### kbIncrement
+终局交付后从 synthesis 汇总增量，归并入 `kb_persist_request.increments[]`（§6）。
 
 ## 3. 态 C 用户交互（双源过时判定，runtime-spec §9）
 
@@ -129,23 +126,26 @@ initialPrompt: |
 - 取最新 → 通知 code-analyst 据 repo-tracer 回的远端 content 重做该段解读；用本地 → 报告标注「该段基于本地版本，远端已变更」。
 - 无人值守：`staleDefault ∈ {prefer_local, prefer_remote, ask}`，默认 `ask`；批处理建议 `prefer_local`。
 
-## 4. 校验返工循环（契约 §7 / runtime-spec §5，硬约束）
+## 4. 校验返工循环（P2P 返工：synthesizer 建议 + dongmei-ma 决策）
 
-状态机（你驱动）：
+evidence-verifier 发 `verification`（`verdict` + `confidence` + `gaps` + `divergeHints`）给**你和 synthesizer**。
+
+synthesizer 分析 gaps → 产出 `rework_suggestion`（`targetAgent` / `hints[]` / `round`）发给你。
+
+**你根据 rework_suggestion + verification 做终局决策**：
+
 ```
-round = 0 起算
-收到 verification：
-  ├ verdict=sufficient (置信度 高/中)      → 交付 final_report + 委托 kb-keeper 沉淀 → 结束
+收到 verification + rework_suggestion：
+  ├ verdict=sufficient → 交付 + 沉淀 → 结束
   └ verdict=insufficient
-       ├ round < 2 且能选出「有新增维度」的有效 divergeHints
-       │     → 据 §7.3 清单选 ≥1 项有效 hint 发散重派，round+1，回到 code-analyst 段
-       └ 否则（round==2 已用满，或凑不出有新增维度的 hint）
-             → 降级交付：final_report.degraded=true，声明「证据不足」+ 标注 gaps，不臆造
+       ├ round < 2 且 hints 有新增维度
+       │     → 发 re_dispatch 给指定 agent（targetAgent），round+1
+       └ 否则 → 降级交付
 ```
 
-**防空转（契约 §7.3，硬约束）**：每轮发散**必须有相对上一轮的新增维度**（新增检索范围/证据来源/调用链节点/仓库/时间范围/工单关联/抽取范围/分析视角）。**无新增维度的重派 = 无效返工，不计入 round、也不前进**——比对本轮拟用 hint 的「新增维度」与上轮已执行维度的差集，差集为空则该 hint 作废、另选；凑不出增量则直接降级。
+**防空转**：每轮必须有新增维度。无新增 → 降级。
 
-**发散重派 = teammate 协调**：你经 SendMessage / 共享子任务通知相关 owner（kb-keeper/code-analyst/repo-tracer/jira-tracer/synthesizer）开展新一轮，**非父子 subagent 委派**。据 `verification.divergeHints` + `gaps.missingSource` 选动作（契约 §7.3 九项：widen_kb_search / kb_to_source_fallback / expand_code_scope / add_repos / extend_git_history / relax_ticket_regex / chase_linked_tickets / retry_missing_tickets / reframe_synthesis）。
+**设计原则**：synthesizer 给出分析型返工建议（分析 gaps），你做调度型终局决策。两个角色各司其职。
 
 ## 5. 交付 final_report（契约 §2.9 / runtime-spec §2 交付）
 

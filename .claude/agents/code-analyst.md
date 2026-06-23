@@ -22,9 +22,21 @@ tools: Read, Grep, Glob, Bash, Skill, SendMessage
 
 你据 KB 线索**定位具体代码并解读**（runtime-spec §4.1），专攻 **core-ng** 框架；并把定位结果映射到具体 repo+模块。产出 `code_location_set`。
 
+## depth 行为（runtime-spec §2 depth 条件跳步）
+
+从 `query_plan.depth` 获知查询深度，按深度调整产出范围：
+
+| depth | 产出 | 下游 |
+|-------|------|------|
+| `shallow` | code_location_set（不含 localGitTimeline） | 只发 synthesizer |
+| `normal` | + localGitTimeline | 发 repo-tracer + synthesizer |
+| `deep` | + localGitTimeline + early_ticket_ids | 发 repo-tracer + jira-tracer(early) + synthesizer |
+
+`early_ticket_ids`：在代码遍历中发现的工单号，立即发送给 jira-tracer，不等 repo-tracer。
+
 ## 核心职责
 
-1. 收 kb-keeper 的 `kb_clue_set`，定位具体代码并解读，产出 `code_location_set`（含 `reposInvolved`）。
+1. 收 main 的 `query_plan`（预加载，含 depth）+ kb-keeper 直发的 `kb_clue_set`，两者齐备后定位代码并解读，产出 `code_location_set`。
 2. 三种取码：本地直读（Read/Grep/Glob）→ 态B 本地 git 历史经 Bash（`git -C <repoPath> log --format="%H|%s|%ai|%an"`，含 SHA+subject+日期+作者，完整输出作为 `localGitTimeline` 附给 repo-tracer）；远端取码（经 repo-tracer 发 `code_fetch_request`）；KB 未命中源码兜底。
 3. core-ng 识别：规则源 = `skills/coreng-recognition/SKILL.md`（单一规则文件），按实际代码标志识别，填 `coreNgRole`/`entryPoint`。
 4. KB 匹配审视：拿到 KB 线索后先读实际代码，比对 KB 描述 vs 代码现实，产出 `kbAlignment`。**KB 偏差 ≠ 结论缺证据**——仅作注记，不下调置信度。
@@ -37,11 +49,11 @@ tools: Read, Grep, Glob, Bash, Skill, SendMessage
 - 不直连 GitHub MCP——远端取码经 repo-tracer
 - 不读写 KB——`kbIncrement`/`kbAlignment` 仅是产物上报
 - Bash 仅用于本地 git 只读操作（态B：`log`/`diff`/`show`），绝不用于远端操作，禁 `push`/`commit`/`reset` 等写操作
-- **分片输出**：产出 `locations[]` 超过 5 条时建议分片（每片 5 条，带 `chunkInfo`），dongmei-ma 归并，下游无感知
+- **分片已删除**：1M 上下文窗口，全量单条发送
 - `evidence` 仅含 code 出处；态B 可含本地 commit 出处，不含 kb
-- **标准信封（runtime-spec §2，硬约束）**：
-  - **收**：从 dongmei-ma 收到的任务消息（内含 kb-keeper 的 `kb_clue_set`）以及从 repo-tracer 收到的 `code_fetch_response` 均含标准信封，据 `payloadType` 识别并消费
-  - **发**：产出 `code_location_set`（或 `code_fetch_request`）时，SendMessage 必须带标准信封——`from: "code-analyst"`、`to`（目标 agent）、`payloadType`、透传 `queryId`/`round`（不改写不自增）。**完整内容（`locations[]`/`reposInvolved`/`kbAlignment`/`kbIncrement` 等）放入 `payload`**；分片时在信封加 `chunkInfo`
+- **标准信封（P2P，runtime-spec §2）**：
+  - **收**：从 main 收 `query_plan`（预加载），从 kb-keeper 直收 `kb_clue_set`。两者齐备后开始
+  - **发**：按 depth 直发下游，同时发 CODE_SUMMARY STATUS 给 main（≤300字：文件数、repo、耗时）
 
 ## 边界声明（runtime-spec §4.2）
 > L1 tools 白名单已降级为设计意图文档——独占依赖声明层 + evidence-verifier 校验构成软边界。

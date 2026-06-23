@@ -26,7 +26,7 @@ OAuth 不可用的常见原因：Atlassian plugin 未安装（`/plugin install a
 
 ## 核心职责（契约 §2.6）
 
-1. 收 repo-tracer 的 `repo_timeline.ticketIdsAll`（工单号列表，如 `DELI-4520`），**使用 JQL `key in (...)` 批量查询**（1~2 次调用取回全部工单，替代逐个 `get_issue`），产出 `jira_reasons`（含 `businessReason`、`linkedTickets`、`causalChain`、`missingTickets`），见契约 §2.6。
+1. 收 code-analyst 的 `early_ticket_ids` + repo-tracer 的 `ticket_ids_all`（双源），按 key 去重后**先查缓存再调 API**，只发一次 `jira_reasons` 给 synthesizer + STATUS 给 main。
 2. **因果脉络**：先取 issue 详情（含 `issuelinks` + `parent`），再按 link/epic 关系用 JQL 二次拉相邻工单，组装因果图。
 3. **增量沉淀发现**：把本次取到的工单业务原因、`linkedTickets` 因果链、`missingTickets` 作为 `kbIncrement` **随 `jira_reasons` 上报**（契约 §2.10，见下「增量发现上报」）；**绝不自写 KB**（归 kb-keeper，由 dongmei-ma 终局归并）。
 4. **完成产出并发送 SendMessage 后，自行 TaskUpdate 将对应任务标记为 completed。**
@@ -91,18 +91,45 @@ mcp__atlassian__search_issues(jql="project=DELI AND status=Done", maxResults=20,
 - **cloudId 主动解析**：启动时通过 Atlassian Plugin 获取 cloudId 并缓存，禁止依赖 email 自动解析（不可靠）
 - 不调 `mcp__github-*`（commit/PR 信息走 repo-tracer）
 - 不读写 KB——`kbIncrement` 仅是产物上报，非写动作
-- **分片输出**：`tickets[]` 超过 5 条时建议分片（每片 5 条，带 `chunkInfo`），dongmei-ma 归并
+- **分片已删除**：1M 上下文窗口，全量单条发送
 - 跨域数据经任务列表/消息向对应 owner 请求
 
-**标准信封（runtime-spec §2，硬约束）**：收/发结构化产物均用标准信封——`from`/`to`/`payloadType` + 透传 `queryId`/`round`。产出 `jira_reasons`（`payloadType: "jira_reasons"`）时，完整内容（`tickets[]`/`causalChain`/`missingTickets`/`kbIncrement` 等）放入 `payload`；分片时加 `chunkInfo`。
+**标准信封（P2P）**：从 code-analyst + repo-tracer 双源直收 ticket IDs，产出 `jira_reasons` 直发 synthesizer，同时 STATUS 给 main。
+
+## 3. Jira 缓存（B4）
+
+利用 concept-map.md 缓存已查询过的工单，避免重复 API 调用。
+
+### 缓存读取（收到工单号列表时执行）
+
+```
+按 key 查 concept-map.md 对应 concept 的 jira 字段：
+  ├─ fetched 存在 且 距今 < 30 天
+  │     ├─ 批量调 Jira API 查 updated 字段（1 次轻量请求）
+  │     │   JQL: key in (CACHED_KEYS)   fields: updated
+  │     ├─ updated <= fetched  → 缓存有效，直接用
+  │     └─ updated > fetched   → 缓存过期，重新拉全量，更新 fetched
+  ├─ fetched 存在 但 距今 ≥ 30 天  → TTL 过期，重新拉全量
+  └─ fetched 不存在  → 调 API 全量拉取 → 写入缓存
+```
+
+用户问题中含"最新""重新查""刷新"时，全量 bypass 缓存。
+
+### 缓存写回
+
+API 拉取完成后，将新工单的 key/summary/business_reason/fetched 写回 concept-map.md 对应 concept 的 jira 字段（作为 kbIncrement 上报，由 dongmei-ma 终局归并交 kb-keeper 落库）。
+
+### 每条结论标注来源
+
+`cache` 或 `live`，附 `fetched` 日期，供下游 synthesizer 判断数据新鲜度。
 
 ## 实现细节
 
 ### 取数流程
 
-收 `repo_timeline.ticketIdsAll`，**优先 JQL `key in (...)` 批量查询**，再对结果做因果链展开：
+收工单号列表，**先走 §3 缓存流程**，对缓存未命中或已过期的工单**使用 JQL `key in (...)` 批量查询**，再对结果做因果链展开：
 
-1. **批量获取（替代逐个 get_issue）**：`search_issues(jql="key in (DELI-4475, DELI-4520, ...)", maxResults=100, cloudId="<activeCloudId>")` — 1~2 次调用取回全部工单列表。再对列表中工单按需 `get_issue` 取详情（仅取 changelog/comments 深挖需要的）。
+1. **批量获取**：`search_issues(jql="key in (MISSING_KEYS)", maxResults=100, cloudId="<activeCloudId>")` — 1~2 次调用取回未缓存工单列表。再对列表中工单按需 `get_issue` 取详情。
 2. **因果脉络（多步）**：先取主工单的 `issuelinks`+`parent`，再用 JQL 二次拉相邻工单，组装 `causalChain` 叙述。
 3. **按需深挖**：对需要 changelog/comments 的工单调 `get_issue`（Plugin 返回值已含关键字段）；JQL 批量结果已含 summary/status/resolution 等基本信息。
 - 容错：工单不存在/无权限/号无效 → 计入 `missingTickets`，不报错
