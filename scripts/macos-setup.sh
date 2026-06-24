@@ -279,12 +279,14 @@ auto_scan() {
 
     if [[ -f "$repos_path" ]]; then
         while IFS='|' read -r slug local_p owner repo branch kb_v kb_p; do
+            IFS= read -r entry_json
             [[ -z "$slug" ]] && continue
             [[ -n "$local_p" ]] && repos["${slug}_local"]="$local_p"
             repos["${slug}_owner"]="$owner"; repos["${slug}_repo"]="$repo"
             repos["${slug}_branch"]="$branch"
             repos["${slug}_kb_vault"]="$kb_v"; repos["${slug}_kb_path"]="$kb_p"
-            repos["_slugs"]="${repos[_slugs]} $slug"
+            [[ -n "$entry_json" ]] && repos["${slug}_entry"]="$entry_json"
+            repos["_slugs"]="${repos[_slugs]:+${repos[_slugs]} }$slug"
         done < <(python3 -c "
 import json
 d=json.load(open('$repos_path'))
@@ -293,6 +295,7 @@ for slug, r in d.get('repos',{}).items():
     rm = r.get('remote',{})
     kb = r.get('kb',{})
     print(f'{slug}|{lp}|{rm.get(\"owner\",\"\")}|{rm.get(\"repo\",\"\")}|{rm.get(\"branch\",\"main\")}|{kb.get(\"vault\",\"\")}|{kb.get(\"path\",\"\")}')
+    print(json.dumps(r))
 " 2>/dev/null)
     fi
 
@@ -317,7 +320,7 @@ for slug, r in d.get('repos',{}).items():
             repos["${slug}_local"]="$resolved"
             repos["${slug}_owner"]="$owner"; repos["${slug}_repo"]="$repo_name"
             repos["${slug}_branch"]="$branch"
-            repos["_slugs"]="${repos[_slugs]} $slug"
+            repos["_slugs"]="${repos[_slugs]:+${repos[_slugs]} }$slug"
             changed=true
             info "  [auto] $slug — 自动发现: $owner/$repo_name [$branch]"
         done < <(find "$dm_repos" -maxdepth 2 -name ".git" -type d 2>/dev/null)
@@ -341,7 +344,7 @@ for slug, r in d.get('repos',{}).items():
 
     if $changed; then
         local slugs=(${repos[_slugs]})
-        local json_parts=""
+        mkdir -p "$(dirname "$repos_path")"
         for slug in "${slugs[@]}"; do
             local lp="${repos[${slug}_local]}"
             local ow="${repos[${slug}_owner]}"
@@ -349,15 +352,37 @@ for slug, r in d.get('repos',{}).items():
             local br="${repos[${slug}_branch]}"
             local kv="${repos[${slug}_kb_vault]}"
             local kp="${repos[${slug}_kb_path]}"
-            local local_block="null"; [[ -n "$lp" ]] && local_block="{\"path\": \"$lp\"}"
-            local kb_block="null"; [[ -n "$kv" ]] && kb_block="{\"vault\": \"$kv\", \"path\": \"$kp\"}"
-            json_parts+="$(printf '"%s": {"local": %s, "remote": {"owner": "%s", "repo": "%s", "branch": "%s"}, "kb": %s},' \
-                "$slug" "$local_block" "$ow" "$rp" "$br" "$kb_block")"
-        done
-        json_parts="${json_parts%,}"
-        mkdir -p "$(dirname "$repos_path")"
-        printf '{"repos": {%s}}\n' "$json_parts" | python3 -m json.tool > "$repos_path" 2>/dev/null \
-            || printf '{"repos": {%s}}\n' "$json_parts" > "$repos_path"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$slug" "${lp:-}" "$ow" "$rp" "${br:-main}" "${kv:-}" "${kp:-}"
+        done | python3 -c "
+import json, sys
+repos_path = '$repos_path'
+try:
+    d = json.load(open(repos_path))
+except:
+    d = {}
+repos = d.setdefault('repos', {})
+for line in sys.stdin:
+    parts = line.rstrip('\n').split('\t', 6)
+    if len(parts) < 7:
+        continue
+    slug, lp, ow, rp, br, kv, kp = parts
+    entry = repos.get(slug, {})
+    if lp:
+        entry['local'] = {'path': lp}
+    else:
+        entry.pop('local', None)
+    rm = entry.setdefault('remote', {})
+    rm['owner'] = ow
+    rm['repo'] = rp
+    rm['branch'] = br if br else 'main'
+    if kv:
+        entry['kb'] = {'vault': kv, 'path': kp}
+    else:
+        entry.pop('kb', None)
+    repos[slug] = entry
+json.dump(d, open(repos_path, 'w'), indent=2)
+" 2>/dev/null
     fi
 }
 
@@ -371,12 +396,14 @@ phase3() {
 
     if [[ -f "$repos_path" ]]; then
         while IFS='|' read -r slug local_p owner repo branch kb_v kb_p; do
+            IFS= read -r entry_json
             [[ -z "$slug" ]] && continue
             [[ -n "$local_p" ]] && repos["${slug}_local"]="$local_p"
             repos["${slug}_owner"]="$owner"; repos["${slug}_repo"]="$repo"
             repos["${slug}_branch"]="$branch"
             repos["${slug}_kb_vault"]="$kb_v"; repos["${slug}_kb_path"]="$kb_p"
-            repos["_slugs"]="${repos[_slugs]} $slug"
+            [[ -n "$entry_json" ]] && repos["${slug}_entry"]="$entry_json"
+            repos["_slugs"]="${repos[_slugs]:+${repos[_slugs]} }$slug"
             info "  已加载: $slug — $owner/$repo [$branch]"
         done < <(python3 -c "
 import json
@@ -386,6 +413,7 @@ for slug, r in d.get('repos',{}).items():
     rm = r.get('remote',{})
     kb = r.get('kb',{})
     print(f'{slug}|{lp}|{rm.get(\"owner\",\"\")}|{rm.get(\"repo\",\"\")}|{rm.get(\"branch\",\"main\")}|{kb.get(\"vault\",\"\")}|{kb.get(\"path\",\"\")}')
+    print(json.dumps(r))
 " 2>/dev/null)
     fi
 
@@ -440,7 +468,7 @@ for slug, r in d.get('repos',{}).items():
                             repos["${slug}_local"]="$repo_dir"
                             repos["${slug}_owner"]="$owner"; repos["${slug}_repo"]="$repo_name"
                             repos["${slug}_branch"]="$branch"
-                            repos["_slugs"]="${repos[_slugs]} $slug"
+                            repos["_slugs"]="${repos[_slugs]:+${repos[_slugs]} }$slug"
                             success "    [auto] $slug — $owner/$repo_name [$branch]"
                         fi
                     fi
@@ -465,7 +493,7 @@ for slug, r in d.get('repos',{}).items():
             repos["${slug}_local"]="$local_p"
             repos["${slug}_owner"]="$owner"; repos["${slug}_repo"]="$repo_name"
             repos["${slug}_branch"]="$chosen"
-            repos["_slugs"]="${repos[_slugs]} $slug"
+            repos["_slugs"]="${repos[_slugs]:+${repos[_slugs]} }$slug"
             success "  已添加: $slug ($owner/$repo_name) [$chosen]"
             read -rp "继续添加？[y/N]: " want_manual
         done
@@ -507,7 +535,7 @@ for slug, r in d.get('repos',{}).items():
                         repos["${slug}_local"]="$clone_path"
                         repos["${slug}_owner"]="$owner"; repos["${slug}_repo"]="$slug"
                         repos["${slug}_branch"]="$chosen"
-                        repos["_slugs"]="${repos[_slugs]} $slug"
+                        repos["_slugs"]="${repos[_slugs]:+${repos[_slugs]} }$slug"
                         success "    $slug clone 完成 [$chosen]"
                     else warn "    $slug clone 失败"; fi
                 fi
@@ -515,23 +543,45 @@ for slug, r in d.get('repos',{}).items():
         fi
     fi
 
-    # 写回 repos.json
+    # 写回 repos.json（python3 merge：读现有JSON，保留所有顶层键和未知字段）
     local slugs=(${repos[_slugs]})
     if [[ ${#slugs[@]} -gt 0 ]]; then
-        local json_parts=""
+        mkdir -p "$(dirname "$repos_path")"
         for slug in "${slugs[@]}"; do
             local lp="${repos[${slug}_local]}"; local ow="${repos[${slug}_owner]}"
             local rp="${repos[${slug}_repo]}"; local br="${repos[${slug}_branch]}"
             local kv="${repos[${slug}_kb_vault]}"; local kp="${repos[${slug}_kb_path]}"
-            local local_block="null"; [[ -n "$lp" ]] && local_block="{\"path\": \"$lp\"}"
-            local kb_block="null"; [[ -n "$kv" ]] && kb_block="{\"vault\": \"$kv\", \"path\": \"$kp\"}"
-            json_parts+="$(printf '"%s": {"local": %s, "remote": {"owner": "%s", "repo": "%s", "branch": "%s"}, "kb": %s},' \
-                "$slug" "$local_block" "$ow" "$rp" "$br" "$kb_block")"
-        done
-        json_parts="${json_parts%,}"
-        mkdir -p "$(dirname "$repos_path")"
-        printf '{"repos": {%s}}\n' "$json_parts" | python3 -m json.tool > "$repos_path" 2>/dev/null \
-            || printf '{"repos": {%s}}\n' "$json_parts" > "$repos_path"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$slug" "${lp:-}" "$ow" "$rp" "${br:-main}" "${kv:-}" "${kp:-}"
+        done | python3 -c "
+import json, sys
+repos_path = '$repos_path'
+try:
+    d = json.load(open(repos_path))
+except:
+    d = {}
+repos = d.setdefault('repos', {})
+for line in sys.stdin:
+    parts = line.rstrip('\n').split('\t', 6)
+    if len(parts) < 7:
+        continue
+    slug, lp, ow, rp, br, kv, kp = parts
+    entry = repos.get(slug, {})
+    if lp:
+        entry['local'] = {'path': lp}
+    else:
+        entry.pop('local', None)
+    rm = entry.setdefault('remote', {})
+    rm['owner'] = ow
+    rm['repo'] = rp
+    rm['branch'] = br if br else 'main'
+    if kv:
+        entry['kb'] = {'vault': kv, 'path': kp}
+    else:
+        entry.pop('kb', None)
+    repos[slug] = entry
+json.dump(d, open(repos_path, 'w'), indent=2)
+" 2>/dev/null
         success "repos.json 已写入（${#slugs[@]} 个仓库）"
     fi
 }

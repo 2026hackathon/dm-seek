@@ -550,7 +550,7 @@ function Invoke-Phase2($env) {
         Write-Info "      3. 运行: setx GITHUB_TOKEN <你的token>"
         Write-Info "      4. 重启终端，重新运行本脚本"
         Write-Info ""
-        $manual = Read-Host "  或现在输入 PAT（回车退出）"
+        $manual = Read-MaskedInput "  或现在输入 PAT（回车退出）"
         if ($manual) {
             $auth.Mode = "pat"
             $auth.PAT = $manual
@@ -597,15 +597,9 @@ function Invoke-Phase3($env, $auth) {
             $existing = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($existing.repos) {
                 $existing.repos.PSObject.Properties | ForEach-Object {
-                    $repos[$_.Name] = @{
-                        local = if ($_.Value.local) { @{ path = $_.Value.local.path } } else { $null }
-                        remote = @{
-                            owner = $_.Value.remote.owner
-                            repo = $_.Value.remote.repo
-                            branch = $_.Value.remote.branch
-                        }
-                        kb = if ($_.Value.kb) { @{ vault = $_.Value.kb.vault; path = $_.Value.kb.path } } else { $null }
-                    }
+                    $entry = @{}
+                    $_.Value.PSObject.Properties | ForEach-Object { $entry[$_.Name] = $_.Value }
+                    $repos[$_.Name] = $entry
                 }
                 Write-Info "已加载现有配置: $($repos.Count) 个仓库"
                 foreach ($slug in $repos.Keys) {
@@ -978,17 +972,20 @@ function Invoke-Phase3($env, $auth) {
 
                             Write-Info "  Clone: $($r.fullName) → dm-repos/$slug ..."
                             try {
-                                # PAT 模式用 token 认证，OAuth 模式走 gh CLI keyring
-                                $cloneUrl = if ($auth.Mode -eq "pat" -and $auth.PAT) {
-                                    "https://$($auth.PAT)@github.com/$($r.fullName).git"
-                                } else {
-                                    "https://github.com/$($r.fullName).git"
-                                }
+                                # PAT 模式用 credential helper 避免 PAT 暴露到进程列表
+                                $cloneUrl = "https://github.com/$($r.fullName).git"
                                 # 后台 job 运行 clone，主线程解析进度画进度条
                                 $job = Start-Job -ScriptBlock {
-                                    param($url, $branch, $path)
-                                    git clone --branch $branch $url $path --progress 2>&1
-                                } -ArgumentList $cloneUrl, $branch, $clonePath
+                                    param($url, $branch, $path, $pat)
+                                    $env:GIT_TERMINAL_PROMPT = "0"
+                                    if ($pat) {
+                                        $env:DMSEEK_CLONE_PAT = $pat
+                                        $helper = '!f() { echo username=x-access-token; echo password=$DMSEEK_CLONE_PAT; }; f'
+                                        git -c "credential.helper=" -c "credential.helper=$helper" clone --branch $branch $url $path --progress 2>&1
+                                    } else {
+                                        git clone --branch $branch $url $path --progress 2>&1
+                                    }
+                                } -ArgumentList $cloneUrl, $branch, $clonePath, $auth.PAT
                                 $percent = 0
                                 while ($job.State -eq "Running") {
                                     $latest = Receive-Job $job 2>$null | Select-Object -Last 1
@@ -1059,7 +1056,12 @@ function Invoke-Phase3($env, $auth) {
     }  # 选项 B 结束
 
     # --- 写入 repos.json ---
-    $reposJson = @{ repos = $repos }
+    $reposJson = $null
+    if (Test-Path $reposPath) {
+        try { $reposJson = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+    }
+    if (-not $reposJson) { $reposJson = @{} }
+    $reposJson.repos = $repos
     $reposDir = Join-Path $script:RootDir ".claude"
     if (-not (Test-Path $reposDir)) {
         New-Item -ItemType Directory -Path $reposDir -Force | Out-Null
@@ -1397,11 +1399,9 @@ function Invoke-AutoScan {
             $existing = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($existing.repos) {
                 $existing.repos.PSObject.Properties | ForEach-Object {
-                    $repos[$_.Name] = @{
-                        local = if ($_.Value.local) { @{ path = $_.Value.local.path } } else { $null }
-                        remote = if ($_.Value.remote) { @{ owner = $_.Value.remote.owner; repo = $_.Value.remote.repo; branch = $_.Value.remote.branch } } else { $null }
-                        kb = if ($_.Value.kb) { @{ vault = $_.Value.kb.vault; path = $_.Value.kb.path } } else { $null }
-                    }
+                    $entry = @{}
+                    $_.Value.PSObject.Properties | ForEach-Object { $entry[$_.Name] = $_.Value }
+                    $repos[$_.Name] = $entry
                 }
             }
         } catch { }
@@ -1488,7 +1488,12 @@ function Invoke-AutoScan {
         if (-not (Test-Path $reposDir)) {
             New-Item -ItemType Directory -Path $reposDir -Force | Out-Null
         }
-        $reposObj = @{ repos = $repos }
+        $reposObj = $null
+        if (Test-Path $reposPath) {
+            try { $reposObj = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+        }
+        if (-not $reposObj) { $reposObj = @{} }
+        $reposObj.repos = $repos
         $reposObj | ConvertTo-Json -Depth 4 | Out-File -FilePath $reposPath -Encoding UTF8 -Force
     }
 }
