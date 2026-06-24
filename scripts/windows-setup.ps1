@@ -232,7 +232,6 @@ function Get-InitStatus {
             $reposConfig = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($reposConfig.repos) {
                 $props = $reposConfig.repos.PSObject.Properties
-                $status.RepoCount = $props.Count
                 foreach ($prop in $props) {
                     if ($prop.Value.local -and $prop.Value.local.path) { $status.RepoLocalCount++ }
                     else { $status.RepoRemoteOnlyCount++ }
@@ -244,6 +243,8 @@ function Get-InitStatus {
                         }
                     }
                 }
+                # 从子计数器推导 RepoCount，保证内部一致性，避免 PSCustomObject.Properties.Count 的边界行为
+                $status.RepoCount = [int]$status.RepoLocalCount + [int]$status.RepoRemoteOnlyCount
             }
         } catch { }
     }
