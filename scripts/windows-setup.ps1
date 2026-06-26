@@ -205,14 +205,19 @@ function Get-InitStatus {
     # --- 认证模式判定 ---
     $mcpPath = Join-Path $script:RootDir ".mcp.json"
     if (Test-Path $mcpPath) {
-        $mcpRaw = (Get-Content $mcpPath -Raw -Encoding UTF8).Trim()
-        $status.McpJsonExists = $true
-        if ($mcpRaw -eq "{}" -or $mcpRaw -eq '{"mcpServers":{}}' -or $mcpRaw -eq '{"mcpServers": {}}') {
+        try {
+            $mcpJson = Get-Content $mcpPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $status.McpJsonExists = $true
+            $ghCfg = $mcpJson.mcpServers.github
+            if (-not $ghCfg) {
+                $status.McpJsonMode = "empty"
+            } elseif ($ghCfg.command -eq "gh") {
+                $status.McpJsonMode = "oauth"
+            } elseif ($ghCfg.args.GITHUB_PAT -or ($ghCfg.headers.Authorization -match "GITHUB_TOKEN")) {
+                $status.McpJsonMode = "pat"
+            }
+        } catch {
             $status.McpJsonMode = "empty"
-        } elseif ($mcpRaw -match '"command"\s*:\s*"gh"') {
-            $status.McpJsonMode = "oauth"
-        } elseif ($mcpRaw -match 'GITHUB_TOKEN') {
-            $status.McpJsonMode = "pat"
         }
     }
 
@@ -1337,15 +1342,23 @@ function Invoke-Phase5($auth) {
 
     # 已存在非空 .mcp.json → 检查是否与当前认证模式一致
     $currentMcpMode = ""
-    if ((Test-Path $mcpPath) -and ((Get-Content $mcpPath -Raw -Encoding UTF8).Trim() -ne "{}")) {
-        $mcpRaw = Get-Content $mcpPath -Raw -Encoding UTF8
-        if ($mcpRaw -match '"command"\s*:\s*"gh"') { $currentMcpMode = "oauth" }
-        elseif ($mcpRaw -match 'GITHUB_TOKEN') { $currentMcpMode = "pat" }
+    if (Test-Path $mcpPath) {
+        try {
+            $mcpRaw = Get-Content $mcpPath -Raw -Encoding UTF8
+            if ($mcpRaw.Trim() -ne "{}") {
+                $mcpJson = $mcpRaw | ConvertFrom-Json
+                $ghCfg = $mcpJson.mcpServers.github
+                if ($ghCfg) {
+                    if ($ghCfg.command -eq "gh") { $currentMcpMode = "oauth" }
+                    elseif ($ghCfg.args.GITHUB_PAT -or ($ghCfg.headers.Authorization -match "GITHUB_TOKEN")) { $currentMcpMode = "pat" }
+                }
+            }
+        } catch { }
         if ($currentMcpMode -eq $auth.Mode) {
             Write-Warn ".mcp.json 已存在且与当前认证模式一致（$($auth.Mode)），无需覆盖"
             Write-Info ""
             return
-        } else {
+        } elseif ($currentMcpMode -and $currentMcpMode -ne $auth.Mode) {
             Write-Warn ".mcp.json 当前为 $currentMcpMode 模式，与认证模式 $($auth.Mode) 不一致——覆盖更新"
         }
     }
