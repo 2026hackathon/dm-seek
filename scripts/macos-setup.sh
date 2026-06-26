@@ -822,7 +822,30 @@ MCPEOF
 }
 MCPEOF
     fi
-    success ".mcp.json 已生成（$auth_mode 模式）"; echo
+    success ".mcp.json 已生成（$auth_mode 模式）"
+
+    # Jira/Atlassian Plugin — 写入 settings.json
+    local settings_path="$ROOT_DIR/.claude/settings.json"
+    if [[ -f "$settings_path" ]]; then
+        python3 -c "
+import json
+with open('$settings_path') as f: s = json.load(f)
+s.setdefault('enabledPlugins', {})['atlassian@claude-plugins-official'] = True
+s.setdefault('extraKnownMarketplaces', {})['claude-plugins-official'] = {'source': {'source': 'github', 'repo': 'anthropics/claude-plugins-official'}}
+with open('$settings_path', 'w') as f: json.dump(s, f, indent=2)
+" 2>/dev/null && success "settings.json 已更新（Jira Plugin）" || warn "settings.json 更新失败"
+    else
+        cat > "$settings_path" << 'SETTINGSEOF'
+{
+  "enabledPlugins": { "atlassian@claude-plugins-official": true },
+  "extraKnownMarketplaces": {
+    "claude-plugins-official": { "source": { "source": "github", "repo": "anthropics/claude-plugins-official" } }
+  }
+}
+SETTINGSEOF
+        success "settings.json 已创建（Jira Plugin）"
+    fi
+    echo
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -836,9 +859,14 @@ phase6() {
     else warn "  PAT 模式: 请重启 Claude Code 后运行 /mcp 确认 github server 已连接"; fi
 
     info "[Jira]"
-    info "  在 Claude Code 中依次执行："
-    info "    1. /plugin install atlassian@claude-plugins-official"
-    info "    2. /mcp → Atlassian → Authenticate → 浏览器 OAuth"
+    local jira_ok=false
+    local settings_path="$ROOT_DIR/.claude/settings.json"
+    if [[ -f "$settings_path" ]]; then
+        python3 -c "import json; s=json.load(open('$settings_path')); exit(0 if s.get('enabledPlugins',{}).get('atlassian@claude-plugins-official') else 1)" 2>/dev/null && jira_ok=true
+    fi
+    if $jira_ok; then success "  Jira Plugin 已配置（settings.json）"
+    else warn "  Jira Plugin 未配置，请运行 [5] 生成配置"; fi
+    info "  首次使用需认证：/mcp → Atlassian → Authenticate → 浏览器 OAuth"
 
     info "[Obsidian KB]"
     local obs_found=""

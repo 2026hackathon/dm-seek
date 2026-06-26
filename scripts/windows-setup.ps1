@@ -177,12 +177,18 @@ function Get-InitStatus {
         $mcpCheck = Join-Path $script:RootDir ".mcp.json"
         $isPat = $false
         if (Test-Path $mcpCheck) {
-            try { $mcpJson = Get-Content $mcpCheck -Raw -Encoding UTF8 | ConvertFrom-Json; if ($mcpJson.mcpServers.github.args.GITHUB_PAT) { $isPat = $true } } catch { }
+            try { $mcpJson = Get-Content $mcpCheck -Raw -Encoding UTF8 | ConvertFrom-Json; $ghCfg = $mcpJson.mcpServers.github; if ($ghCfg -and ($ghCfg.args.GITHUB_PAT -or ($ghCfg.headers.Authorization -match "GITHUB_TOKEN"))) { $isPat = $true } } catch { }
         }
         if (-not $isPat) {
-            $job = Start-Job { param($p) & $p auth status 2>&1 } -ArgumentList $ghPath
-            Wait-Job $job -Timeout 10 | Out-Null
-            if ($job.State -eq "Completed") { Receive-Job $job | Out-Null; $exitOk = ($job.ChildJobs[0].JobStateInfo.State -eq "Completed") } else { $exitOk = $false }
+            $job = Start-Job { param($p) & $p auth status 2>$null >$null; $LASTEXITCODE } -ArgumentList $ghPath
+            $completed = Wait-Job $job -Timeout 10
+            if ($completed) {
+                $exitCode = Receive-Job $job
+                $exitOk = ($exitCode -eq 0)
+            } else {
+                $exitOk = $false
+                Write-Debug "Get-InitStatus: gh auth status timed out"
+            }
             Remove-Job $job -Force
         } else { $exitOk = $false }
         if ($exitOk) {
@@ -442,8 +448,9 @@ function Invoke-Phase2($env) {
     # 若无传入 env（菜单模式），自动探测
     if (-not $env) { $env = Get-InitStatus; $env.GhPath = if ($env.GhFound) { "gh" } else { $null }; $env.WingetAvailable = $env.WingetAvailable }
 
-    # 记录切换前的认证模式
-    $prevMode = (Get-InitStatus).AuthMode
+    # 记录切换前的 .mcp.json 认证模式（用于检测用户是否切换了模式）
+    $prevMcpMode = (Get-InitStatus).McpJsonMode
+    if ($prevMcpMode -eq "empty") { $prevMcpMode = "" }  # 空 "empty" 统一为空字符串
 
     Write-Banner "Phase 2/6: GitHub 认证"
 
@@ -516,14 +523,19 @@ function Invoke-Phase2($env) {
 
     # ---- 检测当前实际配置 ----
     $currentMode = $null
-    if (Test-Path ".mcp.json") {
+    $mcpPath = Join-Path $script:RootDir ".mcp.json"
+    if (Test-Path $mcpPath) {
         try {
-            $mcp = Get-Content ".mcp.json" -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($mcp.mcpServers.github.args.GITHUB_PAT) { $currentMode = "pat" }
+            $mcp = Get-Content $mcpPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $ghCfg = $mcp.mcpServers.github
+            if ($ghCfg) {
+                if ($ghCfg.command -eq "gh") { $currentMode = "oauth" }
+                elseif ($ghCfg.args.GITHUB_PAT -or ($ghCfg.headers.Authorization -match "GITHUB_TOKEN")) { $currentMode = "pat" }
+            }
         } catch { }
     }
     if (-not $currentMode) {
-        $ghAuth = (& gh auth status 2>&1)
+        & gh auth status 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) { $currentMode = "oauth" }
     }
     if (-not $currentMode) {
@@ -601,9 +613,10 @@ function Invoke-Phase2($env) {
         }
     }
 
-    # 计算是否变更了认证模式
-    $newMode = (Get-InitStatus).AuthMode
-    $auth.ModeChanged = ($prevMode -ne "none" -and $prevMode -ne $newMode)
+    # 检测认证模式是否变更：比较用户选择的新模式与 .mcp.json 记录的旧模式
+    # 注意：不能用 Get-InitStatus().AuthMode 比较前后（此时 .mcp.json 尚未更新，前后相同）
+    # 当 .mcp.json 为空或与用户选择不一致时均视为变更，触发 Phase 5 自动生成
+    $auth.ModeChanged = ($auth.Mode -ne "none" -and ($prevMcpMode -ne $auth.Mode))
 
     Write-Info ""
     return $auth
@@ -1391,10 +1404,27 @@ function Invoke-Phase5($auth) {
     $mcpJson | ConvertTo-Json -Depth 3 | Out-File -FilePath $mcpPath -Encoding UTF8 -Force
     Write-Success ".mcp.json 已生成（$($auth.Mode) 模式）"
 
+    # Jira/Atlassian Plugin — 写入 settings.json
+    $settingsPath = Join-Path $script:RootDir ".claude\settings.json"
+    $settings = @{}
+    if (Test-Path $settingsPath) {
+        try { $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+    }
+    if (-not $settings.enabledPlugins) { $settings | Add-Member -MemberType NoteProperty -Name "enabledPlugins" -Value @{} -Force }
+    $settings.enabledPlugins | Add-Member -MemberType NoteProperty -Name "atlassian@claude-plugins-official" -Value $true -Force
+    if (-not $settings.extraKnownMarketplaces) { $settings | Add-Member -MemberType NoteProperty -Name "extraKnownMarketplaces" -Value @{} -Force }
+    if (-not $settings.extraKnownMarketplaces."claude-plugins-official") {
+        $marketplace = @{ source = @{ source = "github"; repo = "anthropics/claude-plugins-official" } }
+        $settings.extraKnownMarketplaces | Add-Member -MemberType NoteProperty -Name "claude-plugins-official" -Value $marketplace -Force
+    }
+    $settings | ConvertTo-Json -Depth 4 | Out-File -FilePath $settingsPath -Encoding UTF8 -Force
+    Write-Success "settings.json 已更新（Jira Plugin）"
+
     # 校验
     $files = @(
         @{Path=$mcpPath; Name=".mcp.json"},
-        @{Path=(Join-Path $script:RootDir ".claude\repos.json"); Name=".claude/repos.json"}
+        @{Path=(Join-Path $script:RootDir ".claude\repos.json"); Name=".claude/repos.json"},
+        @{Path=$settingsPath; Name=".claude/settings.json"}
     )
     foreach ($f in $files) {
         if (Test-Path $f.Path) {
@@ -1441,11 +1471,22 @@ function Invoke-Phase6($env, $auth, $repos) {
         Write-Info "  PAT 模式: 请重启 Claude Code 后运行 /mcp 确认 github server 已连接"
     }
 
-    # Jira 提示
+    # Jira
     Write-Info "[Jira]"
-    Write-Info "  在 Claude Code 中依次执行："
-    Write-Info "    1. /plugin install atlassian@claude-plugins-official"
-    Write-Info "    2. /mcp → Atlassian → Authenticate → 浏览器 OAuth"
+    $settingsPath = Join-Path $script:RootDir ".claude\settings.json"
+    $jiraConfigured = $false
+    if (Test-Path $settingsPath) {
+        try {
+            $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($settings.enabledPlugins."atlassian@claude-plugins-official") { $jiraConfigured = $true }
+        } catch { }
+    }
+    if ($jiraConfigured) {
+        Write-Success "  Jira Plugin 已配置（settings.json）"
+    } else {
+        Write-Warn "  Jira Plugin 未配置，请运行 [5] 生成配置"
+    }
+    Write-Info "  首次使用需认证：/mcp → Atlassian → Authenticate → 浏览器 OAuth"
 
     # Obsidian — 独立重检，不依赖 Phase 1 的缓存结果
     Write-Info "[Obsidian KB]"
