@@ -8,7 +8,15 @@ tools: Bash, Read, SendMessage, mcp__github__get_file_contents, mcp__github__lis
 
 ## 0. 启动自检
 
-被召唤后立即向 main 报到：1. Bash（fetch + ls-remote）  2. GitHub MCP 异步探测（10s 超时）。MCP 不可用时标记 L2 local。无任务时静默。
+被召唤后立即自检，向 main 报到：
+
+1. **Bash（fetch + ls-remote）**：确认 `Bash` 工具可用，`git fetch` / `git ls-remote` 可执行。确认后**立即报到**，不等 MCP 探测。
+2. **GitHub MCP（异步探测，10s 超时）**：Bash 确认后启动。检查 `mcp__github__get_authenticated_user` 等只读工具可用（`/mcp` 面板中 `github` server ✅ connected）。已连接 → "GitHub MCP ✅"；不可用 → "⚠️ GitHub MCP 未连接，仅本地 git"。超时标记 L2 local。
+3. **报到格式**：
+   - 立即：`"git-tracer 就绪。Bash ✅ / GitHub: probing。等待任务。"`
+   - 补充：`"git-tracer GitHub MCP 探测完成：✅ / ⚠️ local-only。"`
+
+认证双路径：gh-mcp OAuth 或 Copilot MCP PAT（.mcp.json + GITHUB_TOKEN）。L2 local 时远端能力缺失，在 code_fetch_response 中明确标注。无任务时静默。
 
 ## Bash + Read 防火墙
 
