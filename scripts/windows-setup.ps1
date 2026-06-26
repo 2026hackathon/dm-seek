@@ -91,14 +91,14 @@ function Get-BranchChoice($env, $owner, $repo, $localPath, $defaultBranch) {
                     if ($_ -match "refs/heads/(.+)$") { $Matches[1] }
                 } | Where-Object { $_ }
             }
-        } catch { }
+        } catch { Write-Debug "Get-BranchChoice ls-remote failed: $_" }
     }
     # 方式 2: gh CLI
     if ($branches.Count -eq 0 -and $env.GhFound -and $owner -and $repo) {
         try {
             $raw = & $env.GhPath api "repos/$owner/$repo/branches" --jq ".[].name" 2>$null
             if ($raw) { $branches = $raw -split "`n" | Where-Object { $_ } }
-        } catch { }
+        } catch { Write-Debug "Get-BranchChoice gh api failed: $_" }
     }
 
     if ($branches.Count -gt 0) {
@@ -144,6 +144,8 @@ function Get-InitStatus {
         RepoCount      = 0
         RepoLocalCount = 0
         RepoRemoteOnlyCount = 0
+        EnabledRepoCount = 0
+        DisabledRepoCount = 0
         KbVaultTotal   = 0
         KbVaultDone    = 0
         McpJsonMode    = ""       # oauth / pat / empty
@@ -171,8 +173,19 @@ function Get-InitStatus {
         }
     }
     if ($status.GhFound) {
-        & $ghPath auth status 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+        # PAT 模式下跳过 gh auth status（无需 OAuth 令牌，command 必然挂起）
+        $mcpCheck = Join-Path $script:RootDir ".mcp.json"
+        $isPat = $false
+        if (Test-Path $mcpCheck) {
+            try { $mcpJson = Get-Content $mcpCheck -Raw -Encoding UTF8 | ConvertFrom-Json; if ($mcpJson.mcpServers.github.args.GITHUB_PAT) { $isPat = $true } } catch { }
+        }
+        if (-not $isPat) {
+            $job = Start-Job { param($p) & $p auth status 2>&1 } -ArgumentList $ghPath
+            Wait-Job $job -Timeout 10 | Out-Null
+            if ($job.State -eq "Completed") { Receive-Job $job | Out-Null; $exitOk = ($job.ChildJobs[0].JobStateInfo.State -eq "Completed") } else { $exitOk = $false }
+            Remove-Job $job -Force
+        } else { $exitOk = $false }
+        if ($exitOk) {
             $status.GhAuthOk = $true
             $extList = & $ghPath extension list 2>$null | Out-String
             if ($extList -match "shuymn/gh-mcp") { $status.GhMcpOk = $true }
@@ -235,6 +248,9 @@ function Get-InitStatus {
                 foreach ($prop in $props) {
                     if ($prop.Value.local -and $prop.Value.local.path) { $status.RepoLocalCount++ }
                     else { $status.RepoRemoteOnlyCount++ }
+                    # enable 字段：默认 true
+                    $repoEnable = if ($null -ne $prop.Value.enable) { [bool]$prop.Value.enable } else { $true }
+                    if ($repoEnable) { $status.EnabledRepoCount++ } else { $status.DisabledRepoCount++ }
                     if ($prop.Value.kb) {
                         $status.KbVaultTotal++
                         $vaultPath = Join-Path $script:RootDir $prop.Value.kb.path
@@ -246,7 +262,7 @@ function Get-InitStatus {
                 # 从子计数器推导 RepoCount，保证内部一致性，避免 PSCustomObject.Properties.Count 的边界行为
                 $status.RepoCount = [int]$status.RepoLocalCount + [int]$status.RepoRemoteOnlyCount
             }
-        } catch { }
+        } catch { Write-Debug "Get-InitStatus JSON parse failed: $_" }
     }
 
     return $status
@@ -289,6 +305,9 @@ function Show-Status($s) {
 
     # 仓库
     $repoStr = "$($s.RepoCount) 个仓库 ($($s.RepoLocalCount) 有本地, $($s.RepoRemoteOnlyCount) 仅远端)"
+    if ($s.DisabledRepoCount -gt 0) {
+        $repoStr += " ($($s.EnabledRepoCount) 启用, $($s.DisabledRepoCount) 禁用)"
+    }
     $repoColor = if ($s.RepoCount -gt 0) { "Green" } else { "Yellow" }
     Write-Host ("  repos.json: $repoStr") -ForegroundColor $repoColor
 
@@ -312,6 +331,7 @@ function Show-MainMenu($s) {
     Write-Host "    [5] 生成 .mcp.json (当前: $($s.McpJsonMode.ToUpper()))" -ForegroundColor White
     Write-Host "    [6] 连通性自检" -ForegroundColor White
     Write-Host "    [7] 检查仓库更新" -ForegroundColor White
+    Write-Host "    [8] 刷新依赖图" -ForegroundColor White
     Write-Host "    [0] 退出" -ForegroundColor White
     Write-Host ""
     $choice = Read-Host "  选择"
@@ -554,7 +574,7 @@ function Invoke-Phase2($env) {
         if ($manual) {
             $auth.Mode = "pat"
             $auth.PAT = $manual
-            [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", $manual, "User")
+            try { [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", $manual, "User") } catch { Write-Warn "  环境变量写入失败（权限不足）" }
             $env:GITHUB_TOKEN = $manual
             Write-Success "  GITHUB_TOKEN 已写入用户环境变量"
             Write-Warn "  注意：需重启终端使环境变量对所有进程生效"
@@ -618,6 +638,7 @@ function Invoke-Phase3($env, $auth) {
     Write-Info ""
     Write-Info "[A] 调整仓库分支"
     Write-Info "[B] 扫描加载仓库"
+    Write-Info "[C] 启用/禁用仓库"
     Write-Info "[回车] 保持现有配置，继续"
     $choice = Read-Host "选择操作"
 
@@ -681,7 +702,7 @@ function Invoke-Phase3($env, $auth) {
                                     Write-Info "    切换本地仓库分支: $oldBranch -> $($r.remote.branch) ..."
                                     $prevEAP = $ErrorActionPreference
                                     $ErrorActionPreference = "Continue"
-                                    git -C $r.local.path fetch origin $r.remote.branch 2>$null >$null
+                                    git -C $r.local.path fetch origin $r.remote.branch >$null 2>&1
                                     if ($LASTEXITCODE -ne 0) {
                                         Write-Warn "    fetch 失败（分支可能不存在或网络问题）"
                                     } else {
@@ -707,7 +728,7 @@ function Invoke-Phase3($env, $auth) {
                                 Write-Info "    切换本地仓库分支: $oldBranch -> $newBranch ..."
                                 $prevEAP = $ErrorActionPreference
                                 $ErrorActionPreference = "Continue"
-                                git -C $r.local.path fetch origin $newBranch 2>$null >$null
+                                git -C $r.local.path fetch origin $newBranch >$null 2>&1
                                 if ($LASTEXITCODE -ne 0) {
                                     Write-Warn "    fetch 失败（分支可能不存在或网络问题）"
                                 } else {
@@ -986,8 +1007,8 @@ function Invoke-Phase3($env, $auth) {
                                         git clone --branch $branch $url $path --progress 2>&1
                                     }
                                 } -ArgumentList $cloneUrl, $branch, $clonePath, $auth.PAT
-                                $percent = 0
                                 while ($job.State -eq "Running") {
+                                $percent = 0
                                     $latest = Receive-Job $job 2>$null | Select-Object -Last 1
                                     if ($latest -match '(\d+)%') { $percent = [int]$Matches[1] }
                                     $barLen = [Math]::Floor($percent / 2.5)
@@ -1054,6 +1075,58 @@ function Invoke-Phase3($env, $auth) {
         }
     }
     }  # 选项 B 结束
+
+    # ---- 选项 C: 启用/禁用仓库 ----
+    if ($choice -eq "C" -or $choice -eq "c") {
+        if ($repos.Count -eq 0) {
+            Write-Warn "  无已配置仓库"
+        } else {
+            while ($true) {
+                Write-Info "`n  仓库启用/禁用状态："
+                $slugList = @($repos.Keys)
+                for ($i = 0; $i -lt $slugList.Count; $i++) {
+                    $s = $slugList[$i]
+                    $r = $repos[$s]
+                    $enable = if ($null -ne $r.enable) { [bool]$r.enable } else { $true }
+                    $statusTxt = if ($enable) { "✓ 启用" } else { "✗ 禁用" }
+                    $color = if ($enable) { "Green" } else { "Yellow" }
+                    Write-Host "    [$($i+1)] $s — $statusTxt" -ForegroundColor $color
+                }
+                Write-Info "    [A] 全部启用  [D] 全部禁用  [回车] 返回"
+                $sel = Read-Host "  选择（单号/逗号分隔多号/A/D/回车）"
+                if (-not $sel) { break }
+                if ($sel -eq "A" -or $sel -eq "a") {
+                    foreach ($s in $slugList) { $repos[$s].enable = $true }
+                    Write-Success "  已全部启用"
+                } elseif ($sel -eq "D" -or $sel -eq "d") {
+                    foreach ($s in $slugList) { $repos[$s].enable = $false }
+                    Write-Success "  已全部禁用"
+                } else {
+                    $nums = $sel -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "^\d+$" }
+                    if ($nums.Count -gt 0) {
+                        foreach ($n in $nums) {
+                            $idx = [int]$n - 1
+                            if ($idx -ge 0 -and $idx -lt $slugList.Count) {
+                                $slug = $slugList[$idx]
+                                $cur = if ($null -ne $repos[$slug].enable) { [bool]$repos[$slug].enable } else { $true }
+                                $repos[$slug].enable = (-not $cur)
+                                $st = if ($repos[$slug].enable) { "启用" } else { "禁用" }
+                                Write-Success "    $slug → $st"
+                            }
+                        }
+                    }
+                }
+                # 每次操作后即时写回
+                $reposJson = $null
+                if (Test-Path $reposPath) {
+                    try { $reposJson = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+                }
+                if (-not $reposJson) { $reposJson = @{} }
+                $reposJson.repos = $repos
+                $reposJson | ConvertTo-Json -Depth 4 | Out-File -FilePath $reposPath -Encoding UTF8 -Force
+            }
+        }
+    }
 
     # --- 写入 repos.json ---
     $reposJson = $null
@@ -1360,7 +1433,7 @@ function Invoke-Phase6($env, $auth, $repos) {
     }
     if ($obsFound) {
         Write-Success "  Obsidian CLI: $obsFound"
-        [Environment]::SetEnvironmentVariable("DMSEEK_OBSIDIAN_CLI", $obsFound, "User")
+        try { [Environment]::SetEnvironmentVariable("DMSEEK_OBSIDIAN_CLI", $obsFound, "User") } catch { Write-Warn "  环境变量写入失败（权限不足），请手动设置: `$env:DMSEEK_OBSIDIAN_CLI='$obsFound' " }
         Write-Success "  DMSEEK_OBSIDIAN_CLI 已写入用户环境变量"
     } else {
         Write-Warn "  Obsidian CLI 未找到（KB 功能需手动配置）"
@@ -1542,7 +1615,7 @@ function Invoke-UpdateCheck {
             # fetch 远端
             $prevEAP = $ErrorActionPreference
             $ErrorActionPreference = "Continue"
-            git -C $localPath fetch origin $branch 2>$null >$null
+            cmd /c "git -C `"$localPath`" fetch origin $branch" 2>$null >$null
             $ErrorActionPreference = $prevEAP
         } catch { }
 
@@ -1609,7 +1682,7 @@ function Invoke-UpdateCheck {
         foreach ($u in $toUpdate) {
             Write-Info "  更新: $($u.Slug) [$($u.Branch)] ..."
             try {
-                $pullOutput = git -C $u.Path pull origin $u.Branch 2>&1
+                $pullOutput = cmd /c "git -C `"$($u.Path)`" pull origin $($u.Branch) 2>&1"
                 if ($LASTEXITCODE -eq 0) {
                     Write-Success "    $($u.Slug) 更新完成"
                 } else {
@@ -1629,6 +1702,408 @@ function Invoke-UpdateCheck {
         Write-Success "  所有仓库均已是最新"
     }
 
+    Write-Info ""
+}
+
+# ============================================================
+# Phase 8: 刷新依赖图
+# ============================================================
+
+function Invoke-Phase8-RefreshDependencyGraph {
+    Write-Banner "Phase 8: 刷新依赖图 (dependency-graph.json)"
+
+    $reposPath = Join-Path $script:RootDir ".claude\repos.json"
+    $depGraphPath = Join-Path $script:RootDir ".claude\dependency-graph.json"
+    $depGraphTmp = $depGraphPath + ".tmp"
+    $cachePath = $depGraphPath + ".cache"
+
+    if (-not (Test-Path $reposPath)) {
+        Write-Warn "repos.json 不存在，请先运行 [3] 管理仓库配置"
+        return
+    }
+
+    $reposConfig = $null
+    try {
+        $reposConfig = Get-Content $reposPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        Write-Warn "repos.json 解析失败"
+        return
+    }
+
+    if (-not $reposConfig.repos) {
+        Write-Warn "repos.json 中无仓库"
+        return
+    }
+
+    # 过滤已启用仓库
+    $enabledRepos = @()
+    $props = $reposConfig.repos.PSObject.Properties
+    foreach ($prop in $props) {
+        $enable = if ($null -ne $prop.Value.enable) { [bool]$prop.Value.enable } else { $true }
+        if ($enable) { $enabledRepos += $prop.Name }
+    }
+
+    if ($enabledRepos.Count -eq 0) {
+        Write-Warn "无已启用仓库，无法生成依赖图"
+        return
+    }
+
+    Write-Info "已启用仓库: $($enabledRepos -join ', ')"
+
+    # 加载 SHA 缓存和数据缓存
+    $shaCache = @{}
+    $dataCache = @{}
+    if (Test-Path $depGraphPath) {
+        try {
+            $existingGraph = Get-Content $depGraphPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($existingGraph.repoHeadShas) {
+                $existingGraph.repoHeadShas.PSObject.Properties | ForEach-Object {
+                    $shaCache[$_.Name] = $_.Value
+                }
+            }
+        } catch { }
+    }
+    if (Test-Path $cachePath) {
+        try {
+            $oldCache = Get-Content $cachePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $oldCache.PSObject.Properties | ForEach-Object {
+                $dataCache[$_.Name] = @{
+                    sha          = $_.Value.sha
+                    artifactId   = $_.Value.artifactId
+                    version      = $_.Value.version
+                    dependencies = $_.Value.dependencies
+                }
+            }
+        } catch { }
+    }
+
+    # 导出映射：artifactId → { repo, version }
+    $exportMap = @{}
+    # 消费声明：repo → [ { artifact, version, full } ]
+    $consumedMap = @{}
+    # 新数据缓存
+    $newData = @{}
+
+    $parsedCount = 0
+    $cachedCount = 0
+
+    foreach ($slug in $enabledRepos) {
+        $prop = $props | Where-Object { $_.Name -eq $slug }
+        $localPath = if ($prop.Value.local) { $prop.Value.local.path } else { $null }
+
+        # 获取当前 HEAD SHA
+        $sha = $null
+        if ($localPath -and (Test-Path (Join-Path $localPath ".git"))) {
+            try {
+                $sha = (git -C $localPath rev-parse HEAD 2>$null).Trim()
+            } catch { }
+        }
+
+        # SHA 缓存检查
+        $cached = $dataCache[$slug]
+        if ($cached -and $cached.sha -and $sha -and $cached.sha -eq $sha) {
+            $cachedCount++
+            Write-Info "  $slug — SHA 未变，复用缓存"
+            if ($cached.artifactId) {
+                $exportMap[$cached.artifactId] = @{ repo = $slug; version = $cached.version }
+            }
+            if ($cached.dependencies) {
+                $consumedMap[$slug] = $cached.dependencies
+            }
+            $newData[$slug] = $cached
+            continue
+        }
+
+        # SHA 变更或无缓存 → 重新解析
+        $parsedCount++
+        Write-Info "  解析 $slug ..."
+
+        $artifactId = $null
+        $exportVersion = $null
+        $deps = @()
+
+        # 读取 publish.json（结构: { "modules": [{ "artifactId", "version" }] }）
+        $publishPath = if ($localPath) { Join-Path $localPath "publish.json" } else { $null }
+        if ($publishPath -and (Test-Path $publishPath)) {
+            try {
+                $publish = Get-Content $publishPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($publish.modules) {
+                    $mods = if ($publish.modules -is [array]) { $publish.modules } else { @($publish.modules) }
+                    foreach ($mod in $mods) {
+                        if ($mod.artifactId) {
+                            $exportMap[$mod.artifactId] = @{ repo = $slug; version = $mod.version }
+                        }
+                    }
+                    # 取第一个 module 作为该仓库的主要导出标识
+                    $firstMod = $mods[0]
+                    $artifactId = $firstMod.artifactId
+                    $exportVersion = if ($firstMod.version) { $firstMod.version } else { "0.0.0" }
+                    Write-Success "    publish.json → $($mods.Count) module(s), 主要: $artifactId`:$exportVersion"
+                }
+            } catch {
+                Write-Warn "    publish.json 解析失败"
+            }
+        }
+
+        # ── 通用版本解析 ──
+        # Step 0: 扫描仓库所有 .kt / .kts 文件，提取版本常量定义
+        #     (val | var | const val) <任意名> = "<版本号>"
+        #     不限文件名、不限变量名、不限是否在 buildSrc
+        $globalVars = @{}
+        if ($localPath -and (Test-Path $localPath)) {
+            try {
+                $allKtFiles = Get-ChildItem -Path $localPath -Recurse -Include "*.kt","*.kts" -ErrorAction SilentlyContinue `
+                    | Where-Object { $_.FullName -notmatch '\\build\\' }
+                foreach ($kf in $allKtFiles) {
+                    $ktContent = Get-Content $kf.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+                    if (-not $ktContent) { continue }
+                    # 提取所有 val / var / const val name = "digit..."
+                    $vmList = [regex]::Matches($ktContent, '(?:const\s+val|val|var)\s+(\w+)\s*=\s*"([0-9][0-9.]*)"')
+                    foreach ($vm in $vmList) {
+                        $vName = $vm.Groups[1].Value
+                        $vVal  = $vm.Groups[2].Value
+                        # 同时注册短名和可能的完全限定名，供后续 ${xxx} 和 ${Obj.xxx} 引用查找
+                        if (-not $globalVars.ContainsKey($vName)) { $globalVars[$vName] = $vVal }
+                    }
+                }
+            } catch { }
+        }
+
+        # Step 1: 递归读取所有 build.gradle.kts，匹配 com.wonder:* 依赖
+        if ($localPath -and (Test-Path $localPath)) {
+            try {
+                $gradleFiles = Get-ChildItem -Path $localPath -Recurse -Filter "build.gradle.kts" -ErrorAction SilentlyContinue `
+                    | Where-Object { $_.FullName -notmatch '\\build\\' }
+                $seenDeps = @{}
+                foreach ($gradleFile in $gradleFiles) {
+                    $gradleContent = Get-Content $gradleFile.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+                    if (-not $gradleContent) { continue }
+                    # 匹配: com.wonder:artifact:<字面量版本 或 ${任意引用}>
+                    $matchList = [regex]::Matches($gradleContent, 'com\.wonder:([a-zA-Z0-9_-]+):(?:([0-9][0-9.]*)|\$\{([^}]+)\})')
+                    foreach ($m in $matchList) {
+                        $depArtifact = $m.Groups[1].Value
+                        $depVersion  = $null
+                        if ($m.Groups[2].Success) {
+                            # 字面量版本: 1.2.3
+                            $depVersion = $m.Groups[2].Value
+                        } elseif ($m.Groups[3].Success) {
+                            # 变量引用: ${xxx} 或 ${Obj.xxx}
+                            $ref = $m.Groups[3].Value
+                            # 查全局变量表——先按完整引用查，再按最后一段查
+                            if ($globalVars.ContainsKey($ref)) {
+                                $depVersion = $globalVars[$ref]
+                            } else {
+                                $lastPart = ($ref -split '\.')[-1]
+                                if ($globalVars.ContainsKey($lastPart)) {
+                                    $depVersion = $globalVars[$lastPart]
+                                }
+                            }
+                        }
+                        if ($depArtifact -eq "wonder-dependencies") { continue }
+                        # 版本解析失败 → 用 "unknown"，边依然建立
+                        if (-not $depVersion) { $depVersion = "unknown" }
+                        $key = "$depArtifact`:$depVersion"
+                        if (-not $seenDeps.ContainsKey($key)) {
+                            $seenDeps[$key] = $true
+                            $deps += @{ artifact = $depArtifact; version = $depVersion; full = "$depArtifact`:$depVersion" }
+                        }
+                    }
+                }
+                if ($deps.Count -gt 0) {
+                    Write-Success "    build.gradle.kts → $($deps.Count) 个依赖 (去重)"
+                }
+            } catch {
+                Write-Warn "    build.gradle.kts 解析失败: $_"
+            }
+        }
+
+        # 记录
+        if ($artifactId) {
+            $exportMap[$artifactId] = @{ repo = $slug; version = $exportVersion }
+        }
+        $consumedMap[$slug] = $deps
+
+        $newData[$slug] = @{
+            sha          = $sha
+            artifactId   = $artifactId
+            version      = $exportVersion
+            dependencies = $deps
+        }
+    }
+
+    Write-Info "解析完成: $parsedCount 个仓库重新解析, $cachedCount 个使用缓存"
+
+    # --- 跨仓匹配 ---
+    $edges = @()
+    $unmatched = @()
+    $seenEdgeKeys = @{}
+
+    function Compare-Version($v1, $v2) {
+        $parts1 = $v1 -split '\.'
+        $parts2 = $v2 -split '\.'
+        $maxLen = [Math]::Max($parts1.Count, $parts2.Count)
+        for ($i = 0; $i -lt $maxLen; $i++) {
+            $p1 = if ($i -lt $parts1.Count) { [int]$parts1[$i] } else { 0 }
+            $p2 = if ($i -lt $parts2.Count) { [int]$parts2[$i] } else { 0 }
+            if ($p1 -lt $p2) { return -1 }
+            if ($p1 -gt $p2) { return 1 }
+        }
+        return 0
+    }
+
+    foreach ($slug in $enabledRepos) {
+        $deps = $consumedMap[$slug]
+        if (-not $deps) { continue }
+
+        foreach ($dep in $deps) {
+            $depArtifact = $dep.artifact
+            $depVersion = $dep.version
+            $depFull = $dep.full
+
+            $export = $exportMap[$depArtifact]
+            if ($export -and $export.repo -ne $slug) {
+                # 跨仓匹配命中
+                if ($depVersion -eq "unknown" -or $export.version -eq "unknown") {
+                    $versionMatch = "unknown"
+                } else {
+                    $vc = Compare-Version $depVersion $export.version
+                    $versionMatch = if ($vc -eq 0) { "exact" } elseif ($vc -lt 0) { "behind" } else { "ahead" }
+                }
+
+                $edgeKey = "$slug|$($export.repo)|$depArtifact"
+                if (-not $seenEdgeKeys.ContainsKey($edgeKey)) {
+                    $seenEdgeKeys[$edgeKey] = $true
+                    $edges += [PSCustomObject]@{
+                        fromRepo        = $slug
+                        toRepo          = $export.repo
+                        viaArtifact     = $depArtifact
+                        versionConsumed = $depVersion
+                        versionExported = $export.version
+                        versionMatch    = $versionMatch
+                        relationship    = "api-contract"
+                        source          = "auto"
+                    }
+                    Write-Success "  匹配: $slug → $($export.repo) via $depArtifact ($versionMatch)"
+                }
+            } elseif (-not $export) {
+                # 未匹配
+                $likelyMissingRepo = $null
+                if ($depArtifact -match "^(.+)-service-interface$") { $likelyMissingRepo = $Matches[1] }
+                elseif ($depArtifact -match "^(.+)-client$") { $likelyMissingRepo = $Matches[1] }
+                elseif ($depArtifact -match "^(.+)-api$") { $likelyMissingRepo = $Matches[1] }
+
+                $unmatched += [PSCustomObject]@{
+                    repo              = $slug
+                    artifact          = $depFull
+                    likelyMissingRepo = $likelyMissingRepo
+                    likelyThirdParty  = $false
+                }
+                Write-Info "  未匹配: $slug — $depFull (可能缺失: $likelyMissingRepo)"
+            }
+        }
+    }
+
+    # --- 预计算 reverseEdges ---
+    $reverseEdges = @{}
+    foreach ($edge in $edges) {
+        $toRepo = $edge.toRepo
+        if (-not $reverseEdges.ContainsKey($toRepo)) {
+            $reverseEdges[$toRepo] = @()
+        }
+        $reverseEdges[$toRepo] += @{ fromRepo = $edge.fromRepo; viaArtifact = $edge.viaArtifact }
+    }
+
+    # --- DFS 循环检测（使用 ArrayList 正确实现栈 Pop）---
+    $cyclesDetected = $false
+    $adjList = @{}
+    foreach ($edge in $edges) {
+        if (-not $adjList.ContainsKey($edge.fromRepo)) { $adjList[$edge.fromRepo] = @() }
+        $adjList[$edge.fromRepo] += $edge.toRepo
+    }
+
+    $whiteSet = @{}
+    $graySet = @{}
+    $blackSet = @{}
+    foreach ($slug in $enabledRepos) { $whiteSet[$slug] = $true }
+
+    foreach ($startNode in $enabledRepos) {
+        if (-not $whiteSet.ContainsKey($startNode)) { continue }
+        $stack = New-Object System.Collections.ArrayList
+        [void]$stack.Add(@{ node = $startNode; iter = $null })
+
+        while ($stack.Count -gt 0) {
+            $top = $stack[$stack.Count - 1]
+            $node = $top.node
+
+            if ($null -eq $top.iter) {
+                $whiteSet.Remove($node)
+                $graySet[$node] = $true
+                $neighbors = $adjList[$node]
+                $top.iter = if ($neighbors) { 0 } else { -1 }
+            }
+
+            if ($top.iter -ge 0) {
+                $neighbors = $adjList[$node]
+                if ($top.iter -lt $neighbors.Count) {
+                    $n = $neighbors[$top.iter]
+                    $top.iter++
+
+                    if ($graySet.ContainsKey($n)) {
+                        $cyclesDetected = $true
+                        break
+                    }
+                    if ($whiteSet.ContainsKey($n)) {
+                        [void]$stack.Add(@{ node = $n; iter = $null })
+                    }
+                    continue
+                }
+            }
+
+            # 节点处理完毕 — ArrayList.RemoveAt 正确弹出
+            $stack.RemoveAt($stack.Count - 1)
+            $graySet.Remove($node)
+            $blackSet[$node] = $true
+        }
+
+        if ($cyclesDetected) { break }
+    }
+
+    # --- repoHeadShas ---
+    $repoHeadShas = @{}
+    foreach ($slug in $enabledRepos) {
+        $nd = $newData[$slug]
+        $repoHeadShas[$slug] = if ($nd) { $nd.sha } else { $null }
+    }
+
+    # --- 构建依赖图 ---
+    $depGraph = [PSCustomObject]@{
+        schemaVersion  = "1.0"
+        generatedAt    = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        enabledRepos   = $enabledRepos
+        repoHeadShas   = $repoHeadShas
+        edges          = $edges
+        reverseEdges   = $reverseEdges
+        unmatched      = $unmatched
+        cyclesDetected = $cyclesDetected
+    }
+
+    # --- 原子写入 ---
+    $depGraph | ConvertTo-Json -Depth 10 | Out-File -FilePath $depGraphTmp -Encoding UTF8 -Force
+    if (Test-Path $depGraphPath) { Remove-Item $depGraphPath -Force }
+    Move-Item -Path $depGraphTmp -Destination $depGraphPath -Force
+
+    # --- 写入数据缓存 ---
+    $cacheObj = @{}
+    foreach ($kv in $newData.GetEnumerator()) {
+        $cacheObj[$kv.Key] = $kv.Value
+    }
+    $cacheObj | ConvertTo-Json -Depth 5 -Compress | Out-File -FilePath $cachePath -Encoding UTF8 -Force
+
+    Write-Success "依赖图已写入: .claude/dependency-graph.json"
+    Write-Info "  edges: $($edges.Count) 条"
+    Write-Info "  unmatched: $($unmatched.Count) 条"
+    Write-Info "  cyclesDetected: $cyclesDetected"
+    Write-Info "  已解析: $parsedCount | 缓存命中: $cachedCount"
     Write-Info ""
 }
 
@@ -1669,7 +2144,9 @@ function Main {
             "4" { Invoke-Phase4 }
             "5" { Invoke-Phase5 }
             "6" { Invoke-Phase6 }
-            default { Write-ErrorMsg "无效 Phase: $Phase（有效值: 1-6）" }
+            "7" { Invoke-UpdateCheck }
+            "8" { Invoke-Phase8-RefreshDependencyGraph }
+            default { Write-ErrorMsg "无效 Phase: $Phase（有效值: 1-8）" }
         }
         Read-Host "按回车键退出"
         return
@@ -1677,8 +2154,9 @@ function Main {
 
     # --- 交互菜单模式（默认）---
     Invoke-AutoScan  # 启动时自动扫描 dm-repos/ 和 dm-kbs/
+    $cachedStatus = $null; $cacheTime = [DateTime]::MinValue
     do {
-        $status = Get-InitStatus
+        if (((Get-Date) - $cacheTime).TotalSeconds -gt 10) { $cachedStatus = Get-InitStatus; $cacheTime = Get-Date }; $status = $cachedStatus
         Show-Status $status
         $choice = Show-MainMenu $status
 
@@ -1709,6 +2187,9 @@ function Main {
             }
             "7" {
                 Invoke-UpdateCheck
+            }
+            "8" {
+                Invoke-Phase8-RefreshDependencyGraph
             }
             "0" {
                 Write-Info "退出。"

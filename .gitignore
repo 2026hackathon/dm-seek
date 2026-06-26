@@ -9,3 +9,6 @@ dm-repos/
 
 # KB vault 本地初始化（windows-setup.ps1 Phase 4 自动创建）
 dm-kbs/
+
+# 跨仓依赖图（生成产物）
+.claude/dependency-graph.json

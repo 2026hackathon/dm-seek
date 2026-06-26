@@ -24,6 +24,17 @@ ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
 echo -e "${CYAN}dm-seek macos-setup.sh 启动中...${NC}"
 info "运行目录: $ROOT_DIR"
 
+# ── CLI 参数解析 ──
+AUTO_MODE=false; PHASE_ARG=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -a|--auto) AUTO_MODE=true; shift ;;
+        -p|--phase) PHASE_ARG="$2"; shift 2 ;;
+        -p*) PHASE_ARG="${1#-p}"; shift ;;
+        *) shift ;;
+    esac
+done
+
 # ── 工具函数 ──
 command_exists() { command -v "$1" &>/dev/null; }
 
@@ -62,7 +73,16 @@ get_init_status() {
     command_exists git && git_found=true
     if command_exists gh; then
         gh_found=true
-        gh auth status &>/dev/null && gh_auth_ok=true
+        # PAT 模式下跳过 gh auth status（无需 OAuth，命令必然超时）
+        local is_pat=false
+        if [[ -f .claude/.mcp.json ]]; then
+            python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("mcpServers",{}).get("github",{}).get("args",{}).get("GITHUB_PAT") else 1)" .claude/.mcp.json 2>/dev/null && is_pat=true
+        fi
+        if [[ "$is_pat" == "true" ]]; then
+            : # PAT 模式，跳过 auth 检查
+        else
+            timeout 10 gh auth status &>/dev/null && gh_auth_ok=true
+        fi
         gh extension list 2>/dev/null | grep -q "shuymn/gh-mcp" && gh_mcp_ok=true
     fi
 
@@ -100,15 +120,20 @@ get_init_status() {
     # repos.json
     local repos_path="$ROOT_DIR/.claude/repos.json"
     local repos_json="{}"
+    local enabled_repo_count=0; local disabled_repo_count=0
     if [[ -f "$repos_path" ]]; then
         repos_json="$(cat "$repos_path" 2>/dev/null)"
-        repo_count=$(echo "$repos_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('repos',{})))" 2>/dev/null || echo 0)
-        repo_local_count=$(python3 -c "
+        local stats; stats=$(python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 repos=d.get('repos',{})
-print(sum(1 for r in repos.values() if r.get('local') and r['local'].get('path')))
-" <<< "$repos_json" 2>/dev/null || echo 0)
+total=len(repos)
+local_c=sum(1 for r in repos.values() if r.get('local') and r['local'].get('path'))
+enabled=sum(1 for r in repos.values() if r.get('enable',True)!=False)
+disabled=total-enabled
+print(f'{total}|{local_c}|{enabled}|{disabled}')
+" <<< "$repos_json" 2>/dev/null || echo "0|0|0|0")
+        IFS='|' read -r repo_count repo_local_count enabled_repo_count disabled_repo_count <<< "$stats"
         repo_remote_count=$((repo_count - repo_local_count))
     fi
 
@@ -147,6 +172,8 @@ print(json.dumps({
     'RepoCount': $repo_count,
     'RepoLocalCount': $repo_local_count,
     'RepoRemoteCount': $repo_remote_count,
+    'EnabledRepoCount': $enabled_repo_count,
+    'DisabledRepoCount': $disabled_repo_count,
     'KbVaultTotal': $kb_total,
     'KbVaultDone': $kb_done
 }))
@@ -155,12 +182,13 @@ print(json.dumps({
 
 show_status() {
     local s="$1"
-    local val() { echo "$s" | python3 -c "import sys,json; print(json.load(sys.stdin)['$1'])" 2>/dev/null; }
-    local git_ok gh_ok obs_ok auth mcp rc rlc rrc kbt kbd
+    val() { echo "$s" | python3 -c "import sys,json; print(json.load(sys.stdin)['$1'])" 2>/dev/null; }
+    local git_ok gh_ok obs_ok auth mcp rc rlc rrc kbt kbd enc dc
     git_ok=$(val GitFound); gh_ok=$(val GhFound); obs_ok=$(val ObsidianFound)
     auth=$(val AuthMode); mcp=$(val McpJsonMode)
     rc=$(val RepoCount); rlc=$(val RepoLocalCount); rrc=$(val RepoRemoteCount)
     kbt=$(val KbVaultTotal); kbd=$(val KbVaultDone)
+    enc=$(val EnabledRepoCount); dc=$(val DisabledRepoCount)
 
     banner "dm-seek 初始化状态"
     local gi="[MISS]"; [[ "$git_ok" == "True" ]] && gi="[OK]"
@@ -170,14 +198,21 @@ show_status() {
     info "  gh CLI:    $ghi"
     info "  Obsidian:  $oi"
     info "  GitHub:    ${auth^^}"
-    info "  .mcp.json: $mcp"
-    info "  repos.json: $rc 个仓库 ($rlc 有本地, $rrc 仅远端)"
+    # .mcp.json consistency check
+    local mcp_str="$mcp"
+    if [[ "$auth" != "none" ]] && [[ "$mcp" != "empty" ]] && [[ "$auth" != "$mcp" ]]; then
+        mcp_str="$mcp [WARN: 与认证模式不一致]"
+    fi
+    info "  .mcp.json: $mcp_str"
+    local repo_str="$rc 个仓库 ($rlc 有本地, $rrc 仅远端)"
+    [[ "$dc" -gt 0 ]] && repo_str="$repo_str ($enc 启用, $dc 禁用)"
+    info "  repos.json: $repo_str"
     info "  KB vault:   $kbd/$kbt 已初始化"
 }
 
 show_menu() {
     local s="$1"
-    local val() { echo "$s" | python3 -c "import sys,json; print(json.load(sys.stdin)['$1'])" 2>/dev/null; }
+    val() { echo "$s" | python3 -c "import sys,json; print(json.load(sys.stdin)['$1'])" 2>/dev/null; }
     local auth mcp rc kbd kbt
     auth=$(val AuthMode); mcp=$(val McpJsonMode)
     rc=$(val RepoCount); kbd=$(val KbVaultDone); kbt=$(val KbVaultTotal)
@@ -190,6 +225,7 @@ show_menu() {
     info "    [5] 生成 .mcp.json (当前: $mcp)"
     info "    [6] 连通性自检"
     info "    [7] 检查仓库更新"
+    info "    [8] 刷新依赖图"
     info "    [0] 退出"
     echo
     read -rp "  选择: " choice
@@ -237,7 +273,7 @@ phase2() {
     info "[路径 A] gh CLI + OAuth"
     if command_exists gh; then
         success "  gh CLI: $(command -v gh)"
-        if gh auth status &>/dev/null; then
+        if timeout 10 gh auth status &>/dev/null; then
             success "  gh auth: 已认证"
             if gh extension list 2>/dev/null | grep -q "shuymn/gh-mcp"; then
                 success "  gh-mcp: 已安装"; a_ok=true
@@ -265,7 +301,28 @@ phase2() {
             [[ "$pick" =~ ^[Aa]$ ]] && $a_ok && mode="oauth"
             [[ "$pick" =~ ^[Bb]$ ]] && $b_ok && mode="pat"
         fi
-    else warn "→ A/B 均未就绪，请先配置 GitHub 认证"; fi
+    else
+        warn "→ A/B 均未就绪，请先配置 GitHub 认证"
+        echo; read -rsp "  或现在输入 PAT（回车退出）: " manual; echo
+        if [[ -n "$manual" ]]; then
+            mode="pat"
+            export GITHUB_TOKEN="$manual"
+            # 写入当前 shell profile
+            local rc_file="$HOME/.zshrc"
+            [[ "$SHELL" != *zsh* ]] && rc_file="$HOME/.bash_profile"
+            # 使用 macOS Keychain 存储 PAT，避免明文写入 shell profile
+            if security add-generic-password -a "$USER" -s "dmseek_github_pat" -w "$manual" -U 2>/dev/null; then
+                success "  GITHUB_TOKEN 已存入 Keychain（dmseek_github_pat）"
+                echo 'export GITHUB_TOKEN=$(security find-generic-password -a $USER -s dmseek_github_pat -w 2>/dev/null)' >> "$rc_file"
+            else
+                # Keychain 不可用时回退到明文（但 chmod 600 保护）
+                echo "export GITHUB_TOKEN="$manual"" >> "$rc_file"
+                chmod 600 "$rc_file" 2>/dev/null
+                warn "  GITHUB_TOKEN 已写入 $rc_file（Keychain 不可用，已设 chmod 600）"
+            fi
+            warn "  注意：需新终端窗口使环境变量生效"
+        fi
+    fi
     echo "AUTH_MODE=$mode"
 }
 
@@ -499,8 +556,9 @@ for slug, r in d.get('repos',{}).items():
         done
 
         # 远端浏览 & clone
+    # 注：当前仅取第一页 15 条。使用 [S] 可输入搜索关键词缩小范围
         read -rp "是否从远端浏览并 Clone 仓库？[y/N]: " want_remote
-        if [[ "$want_remote" =~ ^[Yy]$ ]] && command_exists gh && gh auth status &>/dev/null; then
+        if [[ "$want_remote" =~ ^[Yy]$ ]] && command_exists gh && timeout 10 gh auth status &>/dev/null; then
             local dm_repos="$ROOT_DIR/dm-repos"; mkdir -p "$dm_repos"
             read -rp "  Org（回车=个人）: " org
             local search_q
@@ -538,6 +596,80 @@ for slug, r in d.get('repos',{}).items():
                         repos["_slugs"]="${repos[_slugs]:+${repos[_slugs]} }$slug"
                         success "    $slug clone 完成 [$chosen]"
                     else warn "    $slug clone 失败"; fi
+                fi
+            done
+        fi
+    fi
+
+    if [[ "$choice" =~ ^[Cc]$ ]]; then
+        local slugs=(${repos[_slugs]})
+        if [[ ${#slugs[@]} -eq 0 ]]; then
+            warn "  无已配置仓库"
+        else
+            while true; do
+                echo; info "  仓库启用/禁用状态："
+                local repo_status
+                repo_status=$(python3 -c "
+import json
+d = json.load(open('$repos_path'))
+for slug, r in d.get('repos', {}).items():
+    en = r.get('enable', True)
+    print(f'{slug}|{str(en).lower()}')
+" 2>/dev/null)
+                for i in "${!slugs[@]}"; do
+                    local s="${slugs[$i]}"
+                    local enable_val
+                    enable_val=$(echo "$repo_status" | grep "^${s}|" | cut -d'|' -f2 || echo "true")
+                    local st; local color
+                    [[ "$enable_val" == "true" ]] && st="✓ 启用" || st="✗ 禁用"
+                    info "    [$((i+1))] $s — $st"
+                done
+                info "    [A] 全部启用  [D] 全部禁用  [回车] 返回"
+                read -rp "  选择（单号/逗号分隔多号/A/D/回车）: " sel
+                if [[ -z "$sel" ]]; then break; fi
+                if [[ "$sel" =~ ^[Aa]$ ]]; then
+                    python3 -c "
+import json
+d = json.load(open('$repos_path'))
+for s in d.get('repos', {}):
+    d['repos'][s]['enable'] = True
+json.dump(d, open('$repos_path', 'w'), indent=2)
+"
+                    success "  已全部启用"
+                elif [[ "$sel" =~ ^[Dd]$ ]]; then
+                    python3 -c "
+import json
+d = json.load(open('$repos_path'))
+for s in d.get('repos', {}):
+    d['repos'][s]['enable'] = False
+json.dump(d, open('$repos_path', 'w'), indent=2)
+"
+                    success "  已全部禁用"
+                else
+                    IFS=',' read -ra nums <<< "$sel"
+                    for n in "${nums[@]}"; do
+                        n=$(echo "$n" | xargs)  # trim
+                        if [[ "$n" =~ ^[0-9]+$ ]]; then
+                            local idx=$((n - 1))
+                            if [[ $idx -ge 0 ]] && [[ $idx -lt ${#slugs[@]} ]]; then
+                                local slug="${slugs[$idx]}"
+                                local cur_enable
+                                cur_enable=$(echo "$repo_status" | grep "^${slug}|" | cut -d'|' -f2 || echo "true")
+                                local new_bool
+                                [[ "$cur_enable" == "true" ]] && new_bool=False || new_bool=True
+                                python3 -c "
+import json
+d = json.load(open('$repos_path'))
+if '$slug' in d.get('repos', {}):
+    d['repos']['$slug']['enable'] = $new_bool
+json.dump(d, open('$repos_path', 'w'), indent=2)
+"
+                                local st
+                                [[ "$new_bool" == "True" ]] && st="启用" || st="禁用"
+                                success "    $slug → $st"
+                            fi
+                        fi
+                    done
                 fi
             done
         fi
@@ -602,6 +734,11 @@ d=json.load(open('$repos_path'))
 print(' '.join(d.get('repos',{}).keys()))
 " 2>/dev/null)
 
+    # Obsidian 配置注册
+    local obsidian_config="$HOME/Library/Application Support/obsidian/obsidian.json"
+    local obsidian_avail=false; [[ -f "$obsidian_config" ]] && obsidian_avail=true
+    local registered=0
+
     for slug in $slugs; do
         local vault_path="$kb_dir/${slug}_kb"
         [[ -f "$vault_path/.dmseek-init" ]] && continue
@@ -616,10 +753,28 @@ if '$slug' in d.get('repos',{}):
     d['repos']['$slug']['kb'] = {'vault': '${slug}_kb', 'path': 'dm-kbs/${slug}_kb'}
 json.dump(d, open('$repos_path','w'), indent=2)
 " 2>/dev/null
+
+        # 注册到 Obsidian 配置
+        if $obsidian_avail; then
+            python3 -c "
+import json, uuid, time
+cfg_path = '$obsidian_config'
+cfg = json.load(open(cfg_path))
+vaults = cfg.setdefault('vaults', {})
+vault_path = '$vault_path'
+already = any(v.get('path') == vault_path for v in vaults.values() if isinstance(v, dict))
+if not already:
+    vid = uuid.uuid4().hex[:16]
+    vaults[vid] = {'path': vault_path, 'ts': int(time.time() * 1000), 'open': False}
+    json.dump(cfg, open(cfg_path, 'w'), indent=2)
+    print('registered')
+" 2>/dev/null && registered=$((registered + 1))
+        fi
     done
 
     if [[ ${#created[@]} -gt 0 ]]; then
         success "  已创建 vault: ${created[*]}"
+        $obsidian_avail && [[ $registered -gt 0 ]] && success "  已注册 $registered 个 vault 到 Obsidian"
         info "  ┌─────────────────────────────────────────────────────┐"
         info "  │  下一步: 运行 KB-init 生成概念索引                    │"
         info "  │  /kb-init scope=all                                 │"
@@ -632,6 +787,7 @@ json.dump(d, open('$repos_path','w'), indent=2)
 # Phase 5: 配置生成
 # ══════════════════════════════════════════════════════════════
 phase5() {
+    if [[ -f "$ROOT_DIR/.mcp.json" ]]; then        warn ".mcp.json 已存在，将覆盖"; fi
     local auth_mode="${1:-none}"
     banner "Phase 5/6: 配置生成"
     if [[ "$auth_mode" == "none" ]]; then
@@ -675,7 +831,7 @@ MCPEOF
 phase6() {
     banner "Phase 6/6: 连通性自检"
     info "[GitHub]"
-    if command_exists gh && gh auth status &>/dev/null; then
+    if command_exists gh && timeout 10 gh auth status &>/dev/null; then
         success "  gh 认证状态: OK"
     else warn "  PAT 模式: 请重启 Claude Code 后运行 /mcp 确认 github server 已连接"; fi
 
@@ -764,6 +920,315 @@ for slug, r in d.get('repos',{}).items():
 }
 
 # ══════════════════════════════════════════════════════════════
+# Phase 8: 刷新依赖图
+# ══════════════════════════════════════════════════════════════
+phase8() {
+    banner "Phase 8: 刷新依赖图 (dependency-graph.json)"
+    local repos_path="$ROOT_DIR/.claude/repos.json"
+    local dep_path="$ROOT_DIR/.claude/dependency-graph.json"
+    local dep_tmp="${dep_path}.tmp"
+    local cache_path="${dep_path}.cache"
+
+    [[ ! -f "$repos_path" ]] && { warn "repos.json 不存在"; return; }
+
+    local repos_json; repos_json="$(cat "$repos_path" 2>/dev/null)"
+    local total_repos; total_repos=$(python3 -c "import sys,json; print(len(json.load(sys.stdin).get('repos',{})))" <<< "$repos_json" 2>/dev/null || echo 0)
+    [[ "$total_repos" -eq 0 ]] && { warn "repos.json 中无仓库"; return; }
+
+    # 获取已启用仓库列表
+    local enabled_repos; enabled_repos=$(python3 -c "
+import json, sys
+d=json.load(sys.stdin)
+repos=d.get('repos',{})
+enabled=[s for s,r in repos.items() if r.get('enable',True)!=False]
+print(' '.join(enabled))
+" <<< "$repos_json" 2>/dev/null)
+    [[ -z "$enabled_repos" ]] && { warn "无已启用仓库"; return; }
+
+    info "已启用仓库: $enabled_repos"
+
+    # 加载 SHA 缓存
+    local sha_cache="{}"
+    local data_cache="{}"
+    if [[ -f "$dep_path" ]]; then
+        sha_cache=$(python3 -c "
+import json
+d=json.load(open('$dep_path'))
+shas=d.get('repoHeadShas',{})
+print(json.dumps({k:v for k,v in shas.items() if v}))
+" 2>/dev/null || echo "{}")
+    fi
+    if [[ -f "$cache_path" ]]; then
+        data_cache=$(cat "$cache_path" 2>/dev/null || echo "{}")
+    fi
+
+    # 逐仓库解析
+    local parse_script; parse_script=$(python3 << PYEOF
+import json, subprocess, os, sys
+
+repos_path = "$repos_path"
+data_cache = json.loads("""$data_cache""") if "$data_cache" != "{}" else {}
+sha_cache = json.loads("""$sha_cache""") if "$sha_cache" != "{}" else {}
+
+d = json.load(open(repos_path))
+repos = d.get('repos', {})
+enabled = [s for s,r in repos.items() if r.get('enable',True)!=False]
+
+exports = {}
+consumed = {}
+new_data = {}
+parsed = 0
+cached = 0
+
+for slug in enabled:
+    r = repos[slug]
+    lp = r.get('local', {}).get('path', '') if r.get('local') else ''
+    sha = None
+    if lp and os.path.isdir(os.path.join(lp, '.git')):
+        try:
+            sha = subprocess.check_output(['git', '-C', lp, 'rev-parse', 'HEAD'], stderr=subprocess.DEVNULL).decode().strip()
+        except:
+            pass
+
+    # SHA 缓存检查
+    cached_entry = data_cache.get(slug, {})
+    if sha and cached_entry.get('sha') == sha:
+        cached += 1
+        sys.stderr.write(f'  {slug} -- SHA未变，复用缓存\n')
+        aid = cached_entry.get('artifactId')
+        if aid:
+            exports[aid] = {'repo': slug, 'version': cached_entry.get('version')}
+        deps = cached_entry.get('dependencies', [])
+        if deps:
+            consumed[slug] = deps
+        new_data[slug] = cached_entry
+        continue
+
+    parsed += 1
+    sys.stderr.write(f'  解析 {slug} ...\n')
+    aid = None
+    ver = None
+    deps = []
+
+    # publish.json (structure: { "modules": [{ "artifactId", "version" }] })
+    pub_path = os.path.join(lp, 'publish.json') if lp else None
+    if pub_path and os.path.isfile(pub_path):
+        try:
+            pub = json.load(open(pub_path))
+            modules = pub.get('modules', [])
+            if modules:
+                for mod in modules:
+                    ma = mod.get('artifactId')
+                    if ma:
+                        exports[ma] = {'repo': slug, 'version': mod.get('version', '0.0.0')}
+                first = modules[0]
+                aid = first.get('artifactId')
+                ver = first.get('version', '0.0.0')
+                sys.stderr.write(f'    publish.json -> {len(modules)} module(s), primary: {aid}:{ver}\n')
+        except:
+            sys.stderr.write(f'    publish.json 解析失败\n')
+
+    # -- Generic version resolution --
+    # Step 0: scan ALL .kt/.kts files for version constants
+    #     (val | var | const val) <anyName> = "<version>"
+    global_vars = {}
+    if lp and os.path.isdir(lp):
+        import re
+        for root, dirs, files in os.walk(lp):
+            dirs[:] = [d for d in dirs if 'build' not in d or d == 'buildSrc']
+            for f in files:
+                if f.endswith('.kt') or f.endswith('.kts'):
+                    try:
+                        with open(os.path.join(root, f)) as kf:
+                            kcontent = kf.read()
+                        for vm in re.finditer(r'(?:const\s+val|val|var)\s+(\w+)\s*=\s*"([0-9][0-9.]*)"', kcontent):
+                            global_vars[vm.group(1)] = vm.group(2)
+                    except:
+                        pass
+
+    # Step 1: recursive build.gradle.kts, match com.wonder:* deps
+    if lp and os.path.isdir(lp):
+        import re
+        seen_deps = set()
+        for root, dirs, files in os.walk(lp):
+            dirs[:] = [d for d in dirs if d not in ('build', '.git')]
+            for f in files:
+                if f == 'build.gradle.kts':
+                    try:
+                        with open(os.path.join(root, f)) as gf:
+                            content = gf.read()
+                        for m in re.finditer(r'com\.wonder:([a-zA-Z0-9_-]+):(?:([0-9][0-9.]*)|\$\{([^}]+)\})', content):
+                            da = m.group(1)
+                            dv = None
+                            if m.group(2):
+                                dv = m.group(2)
+                            elif m.group(3):
+                                ref = m.group(3)
+                                dv = global_vars.get(ref)
+                                if not dv:
+                                    dv = global_vars.get(ref.split('.')[-1])
+                            if da == 'wonder-dependencies':
+                                continue
+                            if not dv:
+                                dv = 'unknown'
+                            key = f"{da}:{dv}"
+                            if key not in seen_deps:
+                                seen_deps.add(key)
+                                deps.append({'artifact': da, 'version': dv, 'full': f'{da}:{dv}'})
+                    except:
+                        pass
+        if deps:
+            sys.stderr.write(f'    build.gradle.kts -> {len(deps)} deps (deduped)\n')
+
+    new_data[slug] = {
+        'sha': sha,
+        'artifactId': aid,
+        'version': ver,
+        'dependencies': deps
+    }
+
+# 跨仓匹配
+edges = []
+unmatched = []
+seen_edges = set()
+
+for slug in enabled:
+    for dep in consumed.get(slug, []):
+        da = dep['artifact']
+        dv = dep['version']
+        export = exports.get(da)
+        if export and export['repo'] != slug:
+            ev = export['version']
+            # version comparison (handle unknown)
+            if dv == 'unknown' or ev == 'unknown':
+                vm = 'unknown'
+            else:
+                def cmp_ver(a, b):
+                    pa = [int(x) for x in a.split('.')]
+                    pb = [int(x) for x in b.split('.')]
+                    for i in range(max(len(pa), len(pb))):
+                        va = pa[i] if i < len(pa) else 0
+                        vb = pb[i] if i < len(pb) else 0
+                        if va < vb: return -1
+                        if va > vb: return 1
+                    return 0
+                vc = cmp_ver(dv, ev)
+                vm = 'exact' if vc == 0 else ('behind' if vc < 0 else 'ahead')
+            edge_key = f"{slug}|{export['repo']}|{da}"
+            if edge_key not in seen_edges:
+                seen_edges.add(edge_key)
+                edges.append({
+                    'fromRepo': slug,
+                    'toRepo': export['repo'],
+                    'viaArtifact': da,
+                    'versionConsumed': dv,
+                    'versionExported': ev,
+                    'versionMatch': vm,
+                    'relationship': 'api-contract',
+                    'source': 'auto'
+                })
+                sys.stderr.write(f'  匹配: {slug} -> {export["repo"]} via {da} ({vm})\n')
+        elif not export:
+            # unmatched
+            missing = None
+            import re as re2
+            mm = re2.match(r'^(.+)-service-interface$', da)
+            if mm: missing = mm.group(1)
+            else:
+                mm = re2.match(r'^(.+)-client$', da)
+                if mm: missing = mm.group(1)
+                else:
+                    mm = re2.match(r'^(.+)-api$', da)
+                    if mm: missing = mm.group(1)
+            unmatched.append({
+                'repo': slug,
+                'artifact': dep['full'],
+                'likelyMissingRepo': missing,
+                'likelyThirdParty': False
+            })
+            sys.stderr.write(f'  未匹配: {slug} -- {dep["full"]} (可能缺失: {missing})\n')
+
+# 预计算 reverseEdges
+rev = {}
+for e in edges:
+    tr = e['toRepo']
+    rev.setdefault(tr, []).append({'fromRepo': e['fromRepo'], 'viaArtifact': e['viaArtifact']})
+
+# DFS 循环检测
+cycles = False
+adj = {}
+for e in edges:
+    adj.setdefault(e['fromRepo'], []).append(e['toRepo'])
+
+white = {s: True for s in enabled}
+gray = {}
+black = {}
+
+def dfs(n):
+    global cycles
+    white.pop(n, None)
+    gray[n] = True
+    for nb in adj.get(n, []):
+        if nb in gray:
+            cycles = True
+            return
+        if nb in white:
+            dfs(nb)
+    gray.pop(n, None)
+    black[n] = True
+
+for n in enabled:
+    if n in white:
+        dfs(n)
+        if cycles:
+            break
+
+# repoHeadShas
+shas_out = {}
+for slug in enabled:
+    nd = new_data.get(slug, {})
+    shas_out[slug] = nd.get('sha')
+
+# 构建输出
+result = {
+    'schemaVersion': '1.0',
+    'generatedAt': subprocess.check_output(['date', '-u', '+%Y-%m-%dT%H:%M:%SZ']).decode().strip(),
+    'enabledRepos': enabled,
+    'repoHeadShas': shas_out,
+    'edges': edges,
+    'reverseEdges': rev,
+    'unmatched': unmatched,
+    'cyclesDetected': cycles
+}
+
+# 原子写入
+with open('$dep_tmp', 'w') as f:
+    json.dump(result, f, indent=2, ensure_ascii=False)
+
+if os.path.exists('$dep_path'):
+    os.remove('$dep_path')
+os.rename('$dep_tmp', '$dep_path')
+
+# 写入数据缓存
+with open('$cache_path', 'w') as f:
+    json.dump(new_data, f, indent=2, ensure_ascii=False)
+
+print(f"OK|{len(edges)}|{len(unmatched)}|{str(cycles).lower()}|{parsed}|{cached}")
+PYEOF
+)
+    IFS='|' read -r status edge_count unmatched_count cycles_str parsed_count cached_count <<< "$parse_script"
+    if [[ "$status" == "OK" ]]; then
+        success "依赖图已写入: .claude/dependency-graph.json"
+        info "  edges: $edge_count 条"
+        info "  unmatched: $unmatched_count 条"
+        info "  cyclesDetected: $cycles_str"
+        info "  已解析: ${parsed_count:-0} | 缓存命中: ${cached_count:-0}"
+    else
+        warn "依赖图生成失败"
+    fi
+}
+
+# ══════════════════════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════
 main() {
@@ -781,6 +1246,28 @@ main() {
     fi
 
     auto_scan
+
+    # CLI 参数：-a 全量执行，-p N 直接跳转
+    if $AUTO_MODE; then
+        info "全量执行模式：依次运行 Phase 1-6..."
+        phase1; local mode_p2; mode_p2="$(phase2 | grep 'AUTH_MODE=' | cut -d'=' -f2)"
+        phase3; phase4; phase5 "$mode_p2"; phase6
+        exit 0
+    fi
+    if [[ -n "$PHASE_ARG" ]]; then
+        case "$PHASE_ARG" in
+            1) phase1 ;;
+            2) local r2; r2="$(phase2 | grep 'AUTH_MODE=' | cut -d'=' -f2)"; [[ -n "$r2" && "$r2" != "none" ]] && phase5 "$r2" ;;
+            3) phase3 ;;
+            4) phase4 ;;
+            5) phase5 "$(get_init_status | python3 -c "import sys,json; print(json.load(sys.stdin)['AuthMode'])")" ;;
+            6) phase6 ;;
+            7) check_updates ;;
+            8) phase8 ;;
+            *) error "无效 Phase: $PHASE_ARG（有效值: 1-8）" ;;
+        esac
+        exit 0
+    fi
 
     while true; do
         local status; status="$(get_init_status)"
@@ -802,6 +1289,7 @@ main() {
             5) phase5 "$(echo "$status" | python3 -c "import sys,json; print(json.load(sys.stdin)['AuthMode'])")" ;;
             6) phase6 ;;
             7) check_updates ;;
+            8) phase8 ;;
             0) info "退出。"; break ;;
             *) [[ -n "$choice" ]] && warn "无效选择: $choice" ;;
         esac

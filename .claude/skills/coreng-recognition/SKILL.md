@@ -99,17 +99,9 @@ Domain（@Entity / @Collection 领域类）
 
 > **偏离点②**：官方约定仅写「Repository / MongoCollection」，样本**两套并存**。`coreNgRole=Repository` 不细分枚举，靠 `entryPoint.marker` / `interpretation` 区分 db 还是 mongo（注入类型为准）。Domain 角色 = `@Inject` 注入的实体/集合泛型 X（`@Entity` / `@Collection`）。
 
-## 5. Commit 工单号格式（供解读时关联，repo-tracer 抽取主责）
+## 5. Commit 工单号格式（code-analyst 抽取，runtime-spec §7）
 
-| 现象 | 实例 | 处置 |
-| --- | --- | --- |
-| 冒号分隔（主流） | `DELI-4520:Fixed the issue...` | 匹配 |
-| **空格**分隔（偏离点③） | `DELI-4512 Non-test type...`、`DELI-4489 Parallel Search...` | 正则须容空格 |
-| 无号 | `update external api version` | 容错，标 `noTicket`，不报错 |
-| Revert | `Revert "DELI-4503:ADK Java 1.3..."` | 穿透引号二次抽出原号、标 `isRevert=true`（功能蒸发场景7） |
-| 框架升级可定位 | `DELI-4511:upgrade coreNG to 5.0.4` | core-ng 版本可由 commit 定位 |
-
-正则：`^([A-Z]+-\d+)[:\s]`（**冒号或空格**分隔），本仓默认 `DELI-\d+`，可配置。位于 subject 开头。
+正则：`^([A-Z]+-\d+)[:\s]`（冒号或空格分隔，位于 commit subject 开头），本仓默认 `DELI-\d+`，可配置。`DELI-4520:Fixed...`（冒号主流）/ `DELI-4512 Non-test...`（空格，偏离点③）/ `Revert "DELI-4503:..."`（穿透抽原号，`isRevert=true`，场景 7）。无号 → `noTicket`，容错不报错。
 
 ## 6. `coreNgRole` 输出枚举（契约 §2.3 / §6.1 对齐）
 
@@ -130,11 +122,11 @@ entry_points:
     wiring:    "api().service(Xx.class, bind(XxImpl.class))"
     role: RestEntry
   rest_controller:
-    marker_method: "Response m(Request)"            # 不依赖 execute 字面名
+    marker_method: "Response m(Request)"
     wiring: "http().route(HTTPMethod.X, path, controller::method)"
     role: RestEntry
   kafka_handler:
-    type: "class *Handler implements MessageHandler<T>"   # import core.framework.kafka.MessageHandler
+    type: "class *Handler implements MessageHandler<T>"
     pkg: "app.*.kafka"
     wiring: "{Service}App.bindSubscribe(): kafka([name]).subscribe(Topic, Msg.class, bind(Handler.class))"
     role: KafkaEntry
@@ -142,13 +134,13 @@ call_chain:
   inject_marker: "@Inject (core.framework.inject.Inject)"
   service_layer: [QueryService, OperationService, CreationService, "*BaseQueryService"]
   storage:
-    mysql:  { wiring: "db().repository/view(X.class)",                inject: "Repository<X> (core.framework.db.Repository)" }
+    mysql:  { wiring: "db().repository/view(X.class)", inject: "Repository<X> (core.framework.db.Repository)" }
     mongo:  { wiring: "config(MongoConfig).collection/view(X.class)", inject: "MongoCollection<X> (core.framework.mongo.MongoCollection)" }
   domain: "@Inject 注入的实体/集合泛型 X（@Entity / @Collection）"
 ticket:
-  regex: "^([A-Z]+-\\d+)[:\\s]"        # 冒号或空格分隔
+  regex: "^([A-Z]+-\\d+)[:\\s]"
   repo_default: "DELI-\\d+"
-  isRevert: "bool；Revert 提交穿透抽出被 revert 的原工单号填 ticketIds，置 isRevert=true"
+  isRevert: true
   tolerate_no_ticket: true
 ```
 

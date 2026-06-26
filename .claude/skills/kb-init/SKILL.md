@@ -5,7 +5,7 @@ description: 马冬梅计划知识库初始化——以 core-ng 的 REST 入口(
 
 # kb-init — KB 初始化（粗粒度建库）
 
-> 本 skill 是 **dongmei-ma 编排下的一段流程**，**不直接读源码/连 MCP/写库**——各专职动作落到对应 agent，写库一律经 kb-keeper。
+> 本 skill 独立执行 KB 初始化流程，**不直接读源码/连 MCP/写库**——各专职动作落到对应 agent（code-analyst/git-tracer/jira-tracer/kb-keeper），写库一律经 kb-keeper。用户直接调用本 skill 即可，无需经过 dongmei-ma。
 
 ## 何时用
 - 用户尚无知识库，或希望对某仓/某服务补充建库。**可选、不设硬性上限**，由用户用 scope 控制范围。
@@ -19,7 +19,7 @@ description: 马冬梅计划知识库初始化——以 core-ng 的 REST 入口(
 
 **KB vault 位置从 `.claude/repos.json` 读取**（runtime-spec §12）。每个 repo 的 `kb.vault`（Obsidian vault 名）和 `kb.path`（相对路径）由 windows-setup.ps1 Phase 4 自动写入。无 `kb` 字段的 repo 跳过初始化，回报用户运行 `windows-setup.ps1`。
 
-## 流程（单仓；dongmei-ma 编排，逐 agent 调度）
+## 流程（单仓；skill 内编排，逐 agent 调度）
 
 1. **前置校验**：读 `.claude/repos.json`，过滤出含 `kb` 字段的 repo。若 `repos` 参数指定了 repo 但无 `kb` 字段 → 回报用户该 repo 的 KB vault 未创建。若全部无 `kb` → 终止，提示运行 `windows-setup.ps1`。
 2. **范围确定**：默认全部入口点；或按 `scope` 限定。
@@ -28,9 +28,9 @@ description: 马冬梅计划知识库初始化——以 core-ng 的 REST 入口(
    - 形态B：`Controller` + `http().route(HTTPMethod.X, path, controller::method)`；
    - Kafka 入口：`implements MessageHandler<T>`（`core.framework.kafka.MessageHandler`，非 @KafkaListener），注册在 `{Service}App.bindSubscribe()`。
 4. **code-analyst 沿调用链展开**：入口 → `@Inject` 注入的 Service（Query/Operation/Creation）→ Repository（`db().repository`）/ Mongo（`config(MongoConfig).collection/.view`，**双存储形态都覆盖**）→ Domain，到 `maxDepth` 止。产出「入口 → 调用链类集合 → repo+模块」清单（粗粒度，不逐行解读）。
-5. **repo-tracer 取提交线索**：对清单中类/文件取关键 commit（首次引入/最近修改），抽 Jira 工单号（`^([A-Z]+-\d+)[:\s]`、容错无号、Revert 穿透）。
+5. **git-tracer 取提交线索**：对清单中类/文件取关键 commit（首次引入/最近修改），抽 Jira 工单号（`^([A-Z]+-\d+)[:\s]`、容错无号、Revert 穿透）。
 6. **jira-tracer 取业务原因**：对抽到的工单号取「summary + description 概述」级（建库期不取全量评论/changelog）。
-7. **概念提取（自动生成 aliases/keywords）**：kb-keeper 落库前，dongmei-ma 遍历 code-analyst 产出的入口点/调用链清单，对每个入口点自动提取概念映射（runtime-spec §8.2）：
+7. **概念提取（自动生成 aliases/keywords）**：kb-keeper 落库前，由 kb-keeper 基于 code-analyst 产出的入口点/调用链清单自动提取概念映射（runtime-spec §8.2）：
    - **concept 名**：优先取 JavaDoc/commit/Jira summary 中最长的中文名词短语，兜底用入口类名（camelCase 拆词）
    - **aliases**：从 JavaDoc（类/方法注释）、commit subject+body、Jira summary+description 前 200 字符中提取中文短语 + 英文关键词
    - **keywords**：从类名（camelCase 拆词）、方法名（拆词）、@Path/route 路径、包名、调用链下游类名中提取代码符号名
@@ -41,7 +41,7 @@ description: 马冬梅计划知识库初始化——以 core-ng 的 REST 入口(
 
 ## 多仓 / 双源
 - **多仓分别 init**，KB 内按 `<repoSlug>/` 命名空间隔离。
-- **双源**：研发用户本地仓库（code-analyst 直读）；非研发经 repo-tracer → GitHub MCP 取码。建库期不做过时判定（记 commit HEAD 作基线）。
+- **双源**：研发用户本地仓库（code-analyst 直读）；非研发经 git-tracer → GitHub MCP 取码。建库期不做过时判定（记 commit HEAD 作基线）。
 
 ## 边界
-- 本 skill 不直接读源码/连 MCP/写库——编排 code-analyst（入口/调用链）+ repo-tracer（commit+抽号）+ jira-tracer（业务原因）+ kb-keeper（落库）。三条归属约束（KB 写独占 kb-keeper、GitHub MCP 独占 repo-tracer、Jira 独占 jira-tracer）在建库路径上同样成立。
+- 本 skill 不直接读源码/连 MCP/写库——编排 code-analyst（入口/调用链）+ git-tracer（commit+抽号）+ jira-tracer（业务原因）+ kb-keeper（落库）。三条归属约束（KB 写独占 kb-keeper、GitHub MCP 独占 git-tracer、Jira 独占 jira-tracer）在建库路径上同样成立。
