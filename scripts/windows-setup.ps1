@@ -509,13 +509,25 @@ function Invoke-Phase2($env) {
     if ($bReady) { Write-Success "    [B] PAT — 就绪" }
     else         { Write-Warn  "    [B] PAT — 未就绪" }
 
-    # ---- 默认选择 ----
-    if ($aReady) {
-        $auth.Mode = "oauth"
-    } elseif ($bReady) {
-        $auth.Mode = "pat"
-        $auth.PAT = $existingPAT
+    # ---- 检测当前实际配置 ----
+    $currentMode = $null
+    if (Test-Path ".mcp.json") {
+        try {
+            $mcp = Get-Content ".mcp.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($mcp.mcpServers.github.args.GITHUB_PAT) { $currentMode = "pat" }
+        } catch { }
     }
+    if (-not $currentMode) {
+        $ghAuth = (& gh auth status 2>&1)
+        if ($LASTEXITCODE -eq 0) { $currentMode = "oauth" }
+    }
+    if (-not $currentMode) {
+        if ($aReady) { $currentMode = "oauth" }
+        elseif ($bReady) { $currentMode = "pat" }
+    }
+
+    $auth.Mode = $currentMode
+    if ($currentMode -eq "pat") { $auth.PAT = $existingPAT }
 
     # ---- 允许切换 ----
     if ($aReady -or $bReady) {
