@@ -4,6 +4,17 @@
 # 支持重复运行——已有配置会增量合并
 set -o pipefail
 
+# ── bash 版本守卫（macOS 自带 bash 3.2；本脚本用关联数组等 bash 4+ 特性）──
+# 检测到低版本时自动 exec 到 Homebrew 安装的新 bash；找不到则提示安装后退出。
+if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    for _newbash in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+        [ -x "$_newbash" ] && exec "$_newbash" "$0" "$@"
+    done
+    echo "错误：本脚本需要 bash 4+（macOS 自带的是 3.2.x）。" >&2
+    echo "请先安装新版 bash：brew install bash，然后重新运行本脚本。" >&2
+    exit 1
+fi
+
 # ── 颜色 ──
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; CYAN='\033[0;36m'; WHITE='\033[0;37m'; NC='\033[0m'
 info()    { echo -e "${WHITE}$*${NC}"; }
@@ -75,8 +86,8 @@ get_init_status() {
         gh_found=true
         # PAT 模式下跳过 gh auth status（无需 OAuth，命令必然超时）
         local is_pat=false
-        if [[ -f .claude/.mcp.json ]]; then
-            python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("mcpServers",{}).get("github",{}).get("args",{}).get("GITHUB_PAT") else 1)" .claude/.mcp.json 2>/dev/null && is_pat=true
+        if [[ -f "$ROOT_DIR/.mcp.json" ]]; then
+            python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); g=d.get("mcpServers",{}).get("github",{}); sys.exit(0 if g.get("type")=="http" else 1)' "$ROOT_DIR/.mcp.json" 2>/dev/null && is_pat=true
         fi
         if [[ "$is_pat" == "true" ]]; then
             : # PAT 模式，跳过 auth 检查
@@ -313,10 +324,12 @@ phase2() {
             # 使用 macOS Keychain 存储 PAT，避免明文写入 shell profile
             if security add-generic-password -a "$USER" -s "dmseek_github_pat" -w "$manual" -U 2>/dev/null; then
                 success "  GITHUB_TOKEN 已存入 Keychain（dmseek_github_pat）"
-                echo 'export GITHUB_TOKEN=$(security find-generic-password -a $USER -s dmseek_github_pat -w 2>/dev/null)' >> "$rc_file"
+                local kc_line='export GITHUB_TOKEN=$(security find-generic-password -a "$USER" -s dmseek_github_pat -w 2>/dev/null)'
+                grep -qF "$kc_line" "$rc_file" 2>/dev/null || echo "$kc_line" >> "$rc_file"
             else
-                # Keychain 不可用时回退到明文（但 chmod 600 保护）
-                echo "export GITHUB_TOKEN="$manual"" >> "$rc_file"
+                # Keychain 不可用时回退明文（chmod 600 保护 + %q 安全转义 + grep 去重）
+                local pat_line; pat_line="$(printf 'export GITHUB_TOKEN=%q' "$manual")"
+                grep -qF "$pat_line" "$rc_file" 2>/dev/null || echo "$pat_line" >> "$rc_file"
                 chmod 600 "$rc_file" 2>/dev/null
                 warn "  GITHUB_TOKEN 已写入 $rc_file（Keychain 不可用，已设 chmod 600）"
             fi
@@ -371,8 +384,8 @@ for slug, r in d.get('repos',{}).items():
             local remote_url; remote_url="$(git -C "$repo_dir" remote get-url origin 2>/dev/null || true)"
             local branch; branch="$(git -C "$repo_dir" branch --show-current 2>/dev/null || echo main)"
             local owner=""; local repo_name="$slug"
-            if [[ "$remote_url" =~ github\.com[:/](.+)/(.+?)(\.git)?$ ]]; then
-                owner="${BASH_REMATCH[1]}"; repo_name="${BASH_REMATCH[2]}"
+            if [[ "$remote_url" =~ github\.com[:/]([^/]+)/([^/]+)$ ]]; then
+                owner="${BASH_REMATCH[1]}"; repo_name="${BASH_REMATCH[2]%.git}"
             fi
             repos["${slug}_local"]="$resolved"
             repos["${slug}_owner"]="$owner"; repos["${slug}_repo"]="$repo_name"
@@ -518,8 +531,8 @@ for slug, r in d.get('repos',{}).items():
                     local branch; branch="$(git -C "$repo_dir" branch --show-current 2>/dev/null || echo main)"
                     if [[ -n "$remote_url" ]]; then
                         local owner=""; local repo_name="$slug"
-                        if [[ "$remote_url" =~ github\.com[:/](.+)/(.+?)(\.git)?$ ]]; then
-                            owner="${BASH_REMATCH[1]}"; repo_name="${BASH_REMATCH[2]}"
+                        if [[ "$remote_url" =~ github\.com[:/]([^/]+)/([^/]+)$ ]]; then
+                            owner="${BASH_REMATCH[1]}"; repo_name="${BASH_REMATCH[2]%.git}"
                         fi
                         if [[ -z "${repos[${slug}_owner]}" ]]; then
                             repos["${slug}_local"]="$repo_dir"
@@ -543,8 +556,8 @@ for slug, r in d.get('repos',{}).items():
             local remote_url; remote_url="$(git -C "$local_p" remote get-url origin 2>/dev/null || true)"
             local branch; branch="$(git -C "$local_p" branch --show-current 2>/dev/null || echo main)"
             local owner=""; local repo_name="$slug"
-            if [[ "$remote_url" =~ github\.com[:/](.+)/(.+?)(\.git)?$ ]]; then
-                owner="${BASH_REMATCH[1]}"; repo_name="${BASH_REMATCH[2]}"
+            if [[ "$remote_url" =~ github\.com[:/]([^/]+)/([^/]+)$ ]]; then
+                owner="${BASH_REMATCH[1]}"; repo_name="${BASH_REMATCH[2]%.git}"
             fi
             local chosen; chosen=$(get_branch_choice "$branch" "$local_p" "$owner" "$repo_name")
             repos["${slug}_local"]="$local_p"
@@ -584,7 +597,8 @@ for slug, r in d.get('repos',{}).items():
                     local slug; slug="${full_name##*/}"; local owner; owner="${full_name%%/*}"
                     local clone_path="$dm_repos/$slug"
                     info "  Clone: $full_name -> dm-repos/$slug ..."
-                    if git clone --branch "$def_br" "https://github.com/$full_name.git" "$clone_path" --progress 2>&1 | tail -3; then
+                    git clone --branch "$def_br" "https://github.com/$full_name.git" "$clone_path" --progress 2>&1 | tail -3
+                    if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
                         local chosen; chosen=$(get_branch_choice "$def_br" "$clone_path" "$owner" "$slug")
                         if [[ "$chosen" != "$def_br" ]]; then
                             git -C "$clone_path" fetch origin "$chosen" 2>/dev/null
@@ -787,42 +801,45 @@ if not already:
 # Phase 5: 配置生成
 # ══════════════════════════════════════════════════════════════
 phase5() {
-    if [[ -f "$ROOT_DIR/.mcp.json" ]]; then        warn ".mcp.json 已存在，将覆盖"; fi
     local auth_mode="${1:-none}"
     banner "Phase 5/6: 配置生成"
     if [[ "$auth_mode" == "none" ]]; then
         warn ".mcp.json 无法生成：GitHub 认证未配置"; return
     fi
     local mcp_path="$ROOT_DIR/.mcp.json"
-    if [[ "$auth_mode" == "oauth" ]]; then
-        cat > "$mcp_path" << 'MCPEOF'
-{
-  "mcpServers": {
-    "github": {
-      "command": "gh",
-      "args": ["mcp"],
-      "env": { "GITHUB_READ_ONLY": "1" }
+    [[ -f "$mcp_path" ]] && info ".mcp.json 已存在，将增量合并 github 配置（保留其它 MCP server）"
+    # python3 读旧 JSON、仅 merge mcpServers.github（保留用户其它 server）；凭据 ${GITHUB_TOKEN} 环境变量化
+    GITHUB_AUTH_MODE="$auth_mode" python3 - "$mcp_path" << 'PYEOF'
+import json, os, sys
+path = sys.argv[1]
+mode = os.environ.get("GITHUB_AUTH_MODE", "none")
+try:
+    with open(path) as f:
+        cfg = json.load(f)
+    if not isinstance(cfg, dict):
+        cfg = {}
+except Exception:
+    cfg = {}
+servers = cfg.get("mcpServers")
+if not isinstance(servers, dict):
+    servers = {}
+if mode == "oauth":
+    servers["github"] = {"command": "gh", "args": ["mcp"], "env": {"GITHUB_READ_ONLY": "1"}}
+else:
+    servers["github"] = {
+        "type": "http",
+        "url": "https://api.githubcopilot.com/mcp",
+        "headers": {"Authorization": "Bearer ${GITHUB_TOKEN}", "X-MCP-Readonly": "true"},
     }
-  }
-}
-MCPEOF
-    else
-        cat > "$mcp_path" << 'MCPEOF'
-{
-  "mcpServers": {
-    "github": {
-      "type": "http",
-      "url": "https://api.githubcopilot.com/mcp",
-      "headers": {
-        "Authorization": "Bearer ${GITHUB_TOKEN}",
-        "X-MCP-Readonly": "true"
-      }
-    }
-  }
-}
-MCPEOF
+cfg["mcpServers"] = servers
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+PYEOF
+    if [[ $? -ne 0 ]]; then
+        error ".mcp.json 生成失败（python3 合并出错）"; return 1
     fi
-    success ".mcp.json 已生成（$auth_mode 模式）"
+    success ".mcp.json 已生成（$auth_mode 模式，增量合并）"
 
     # Jira/Atlassian Plugin — 写入 settings.json
     local settings_path="$ROOT_DIR/.claude/settings.json"

@@ -1,7 +1,7 @@
 ---
 name: jira-tracer
 description: Jira 网关，经 Atlassian Plugin(OAuth)取工单详情与因果链。收 code-analyst 单源分批。
-tools: Read, Bash, SendMessage, mcp__atlassian__search_issues, mcp__atlassian__get_issue
+tools: Read, Bash, SendMessage, mcp__plugin_atlassian_atlassian__getAccessibleAtlassianResources, mcp__plugin_atlassian_atlassian__searchJiraIssuesUsingJql, mcp__plugin_atlassian_atlassian__getJiraIssue, mcp__plugin_atlassian_atlassian__getJiraIssueRemoteIssueLinks
 ---
 
 # jira-tracer
@@ -9,15 +9,15 @@ tools: Read, Bash, SendMessage, mcp__atlassian__search_issues, mcp__atlassian__g
 ## 0. 启动自检
 
 被召唤后立即向 main 报到（不等 cloudId 解析）：
-- **快路径**：OAuth 检测（L1 缓存 → L2 plugin → L3 不可用）+ cloudId 缓存读取（try/catch）
-- **慢路径**（10s 超时）：cloudId 缓存未命中 → 异步 accessible-resources → 写入缓存
-- **缓存刷新**：API 调因 cloudId 失效报错 → 触发一次刷新；仍失败 → 降级不传 cloudId
+- **快路径**：plugin 连通检测（`/mcp` 面板 `atlassian` server ✅ connected）+ cloudId 缓存读取（try/catch 读 cloudid-cache.json）
+- **慢路径**（10s 超时）：cloudId 缓存未命中 → 调 `mcp__plugin_atlassian_atlassian__getAccessibleAtlassianResources` 取站点 cloudId → echo 写入缓存
+- **缓存刷新**：API 调因 cloudId 失效报错 → 重新调 `getAccessibleAtlassianResources` 刷新一次；仍失败 → 降级不传 cloudId
 
 ## Bash + Read 防火墙
 
 ### Bash 白名单
-仅：echo 写入 cloudid-cache.json、curl Atlassian REST API（cloudId 获取）。
-禁：任何 git 命令、文件浏览、obsidian CLI。
+仅：echo 写入 cloudid-cache.json（cloudId 缓存）。cloudId 获取走 `mcp__plugin_atlassian_atlassian__getAccessibleAtlassianResources`，不再 curl REST。
+禁：任何 git 命令、curl、文件浏览、obsidian CLI。
 
 ### Read 白名单
 仅：.claude/cloudid-cache.json、index/<repoSlug>/concept-map.md（仅 jira 缓存字段）。
@@ -45,10 +45,12 @@ tools: Read, Bash, SendMessage, mcp__atlassian__search_issues, mcp__atlassian__g
 
 | 工具 | 用途 |
 |------|------|
-| mcp__atlassian__search_issues | JQL / 自然语言搜索 |
-| mcp__atlassian__get_issue | 按 key 取详情 |
+| mcp__plugin_atlassian_atlassian__getAccessibleAtlassianResources | 取站点 cloudId（启动自检） |
+| mcp__plugin_atlassian_atlassian__searchJiraIssuesUsingJql | JQL 搜索工单 |
+| mcp__plugin_atlassian_atlassian__getJiraIssue | 按 key 取工单详情（含 issuelinks/parent，供因果链） |
+| mcp__plugin_atlassian_atlassian__getJiraIssueRemoteIssueLinks | 取工单远端关联链接（因果脉络可选） |
 
-白名单不含写工具。cloudId 来自启动自检缓存。
+白名单不含写工具。cloudId 来自启动自检（getAccessibleAtlassianResources）+ 缓存。所有 Jira 工具调用需带 cloudId 参数。
 
 ## 产出
 
@@ -69,4 +71,4 @@ tools: Read, Bash, SendMessage, mcp__atlassian__search_issues, mcp__atlassian__g
 ## 边界（runtime-spec §4.2, §4.4）
 - Jira 只读，认证降级透明，不调 mcp__github__*（归 git-tracer）
 - 不读写 KB（kbIncrement 仅产物上报）
-- 允许的 MCP：mcp__atlassian__search_issues / mcp__atlassian__get_issue（只读）
+- 允许的 MCP：mcp__plugin_atlassian_atlassian__getAccessibleAtlassianResources / searchJiraIssuesUsingJql / getJiraIssue / getJiraIssueRemoteIssueLinks（只读）

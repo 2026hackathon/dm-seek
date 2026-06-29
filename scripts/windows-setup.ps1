@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     dm-seek Windows 一键初始化脚本
 .DESCRIPTION
@@ -45,6 +45,31 @@ function Write-Warn($msg)    { Write-Host $msg -ForegroundColor Yellow }
 function Write-ErrorMsg($msg){ Write-Host $msg -ForegroundColor Red }
 function Write-Banner($msg)  { Write-Host ("`n" + "=" * 60) -ForegroundColor Cyan; Write-Host "  $msg" -ForegroundColor Cyan; Write-Host ("=" * 60 + "`n") -ForegroundColor Cyan }
 
+# ── 无 BOM 写 JSON（PS5.1 的 Out-File -Encoding UTF8 会写 UTF-8 BOM，严格 JSON 解析器/jq/Obsidian 可能报错）──
+function Write-JsonFile($Object, $Path, $Depth = 10, [switch]$Compress) {
+    $json = $Object | ConvertTo-Json -Depth $Depth -Compress:$Compress
+    [System.IO.File]::WriteAllText($Path, $json, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+# ── 深度把 ConvertFrom-Json 的 PSCustomObject 转 hashtable（PS5.1 无 ConvertFrom-Json -AsHashtable）──
+function ConvertTo-HashtableDeep($obj) {
+    if ($obj -is [System.Management.Automation.PSCustomObject]) {
+        $h = @{}; foreach ($p in $obj.PSObject.Properties) { $h[$p.Name] = ConvertTo-HashtableDeep $p.Value }; return $h
+    } elseif ($obj -is [System.Collections.IEnumerable] -and $obj -isnot [string]) {
+        return @($obj | ForEach-Object { ConvertTo-HashtableDeep $_ })
+    } else { return $obj }
+}
+
+# ── 带超时的 gh auth status（防 OAuth 未登录/网络异常时前台调用挂起，尤其 -Auto 无人值守）；返回 $true=已认证 ──
+function Test-GhAuthStatus($ghPath) {
+    if (-not $ghPath) { return $false }
+    $job = Start-Job { param($p) & $p auth status 2>&1 | Out-Null; $LASTEXITCODE } -ArgumentList $ghPath
+    if (Wait-Job $job -Timeout 10) {
+        $code = Receive-Job $job; Remove-Job $job -Force; return ($code -eq 0)
+    }
+    Remove-Job $job -Force; return $false
+}
+
 function Test-Command($cmd) {
     $null = Get-Command $cmd -ErrorAction SilentlyContinue
     return $?
@@ -59,12 +84,12 @@ function Test-Winget {
 function Install-WingetPackage($packageId, $displayName) {
     Write-Info "正在安装 $displayName ..."
     try {
-        winget install --id $packageId --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "  $displayName 安装完成"
+        $wingetOut = winget install --id $packageId --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0 -or $wingetOut -match 'already installed|已安装') {
+            Write-Success "  $displayName 安装完成（或已安装）"
             return $true
         } else {
-            Write-Warn "  winget 安装 $displayName 返回非零退出码，请检查"
+            Write-Warn "  winget 安装 $displayName 返回非零退出码（$LASTEXITCODE），请检查"
             return $false
         }
     } catch {
@@ -473,8 +498,7 @@ function Invoke-Phase2($env) {
         Write-Success "  gh CLI: $($env.GhPath)"
         $aCliOk = $true
 
-        & $env.GhPath auth status 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+        if (Test-GhAuthStatus $env.GhPath) {
             Write-Success "  gh auth: 已认证"
             $aAuthOk = $true
         } else {
@@ -535,8 +559,7 @@ function Invoke-Phase2($env) {
         } catch { }
     }
     if (-not $currentMode) {
-        & gh auth status 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) { $currentMode = "oauth" }
+        if (Test-GhAuthStatus $env.GhPath) { $currentMode = "oauth" }
     }
     if (-not $currentMode) {
         if ($aReady) { $currentMode = "oauth" }
@@ -912,8 +935,7 @@ function Invoke-Phase3($env, $auth) {
         if (-not $env.GhFound) {
             Write-Warn "gh CLI 未安装，跳过远端仓库浏览"
         } elseif ($auth.Mode -eq "oauth") {
-            & $env.GhPath auth status 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
+            if (Test-GhAuthStatus $env.GhPath) {
                 $ghAvailable = $true
             } else {
                 Write-Warn "gh 认证状态异常，跳过远端仓库浏览。请运行: gh auth login"
@@ -973,6 +995,7 @@ function Invoke-Phase3($env, $auth) {
                     Write-Warn "  搜索请求失败，请检查网络或 gh 认证状态"
                 }
 
+                if (-not $totalPages) { $totalPages = 1 }   # 兜底：首页即无结果时 $totalPages 未定义会使翻页判断失效
                 if ($repoList.Count -eq 0) {
                     Write-Warn "  本页无结果"
                     $page = [Math]::Max(1, $page - 1)
@@ -1036,6 +1059,7 @@ function Invoke-Phase3($env, $auth) {
                                     } else {
                                         git clone --branch $branch $url $path --progress 2>&1
                                     }
+                                    "__GITEXIT__$LASTEXITCODE"
                                 } -ArgumentList $cloneUrl, $branch, $clonePath, $auth.PAT
                                 while ($job.State -eq "Running") {
                                 $percent = 0
@@ -1047,14 +1071,20 @@ function Invoke-Phase3($env, $auth) {
                                     Start-Sleep -Milliseconds 200
                                 }
                                 # 收尾
-                                $allOutput = Receive-Job $job 2>$null
+                                $rawOutput = Receive-Job $job 2>$null
                                 Remove-Job $job -Force
+                                # 分离 git clone 真实退出码标记（不再仅靠扫描 fatal: 判定成败）
+                                $gitExit = 0; $allOutput = @()
+                                foreach ($ln in $rawOutput) {
+                                    if ("$ln" -match '^__GITEXIT__(\d+)$') { $gitExit = [int]$Matches[1] }
+                                    else { $allOutput += $ln }
+                                }
                                 if ($percent -ge 100) { $percent = 100 }
                                 $barLen = [Math]::Floor($percent / 2.5)
                                 $bar = "[" + ("#" * $barLen) + (" " * (40 - $barLen)) + "]"
                                 Write-Host "`r  Clone $bar 100%"
-                                # 检查结果：从输出中找错误
-                                $exitCode = 0
+                                # 以 git clone 真实退出码为准，再扫描 fatal: 作补充展示
+                                $exitCode = $gitExit
                                 $allOutput | ForEach-Object {
                                     if ($_ -match "^fatal:") { $exitCode = 1; Write-Warn "    $_" }
                                 }
@@ -1153,7 +1183,7 @@ function Invoke-Phase3($env, $auth) {
                 }
                 if (-not $reposJson) { $reposJson = @{} }
                 $reposJson.repos = $repos
-                $reposJson | ConvertTo-Json -Depth 4 | Out-File -FilePath $reposPath -Encoding UTF8 -Force
+                Write-JsonFile -Object $reposJson -Path $reposPath -Depth 4
             }
         }
     }
@@ -1169,7 +1199,7 @@ function Invoke-Phase3($env, $auth) {
     if (-not (Test-Path $reposDir)) {
         New-Item -ItemType Directory -Path $reposDir -Force | Out-Null
     }
-    $reposJson | ConvertTo-Json -Depth 4 | Out-File -FilePath $reposPath -Encoding UTF8 -Force
+    Write-JsonFile -Object $reposJson -Path $reposPath -Depth 4
     Write-Success "`n.claude/repos.json 已写入（$($repos.Count) 个仓库）"
 
     Write-Info ""
@@ -1253,7 +1283,7 @@ function Invoke-Phase4($repos) {
 
             if ($configSaved) {
                 $config.vaults = $vaults
-                $config | ConvertTo-Json -Depth 10 | Out-File -FilePath $obsidianConfig -Encoding UTF8 -Force
+                Write-JsonFile -Object $config -Path $obsidianConfig -Depth 10
             }
         } catch {
             Write-Warn "  Obsidian 注册失败: $_"
@@ -1277,10 +1307,10 @@ function Invoke-Phase4($repos) {
         if (-not (Test-Path $obsidianDir)) {
             New-Item -ItemType Directory -Path $obsidianDir -Force | Out-Null
         }
-        @{} | ConvertTo-Json | Out-File -FilePath (Join-Path $obsidianDir "app.json") -Encoding UTF8 -Force
+        Write-JsonFile -Object @{} -Path (Join-Path $obsidianDir "app.json")
 
         # 标记已初始化
-        "windows-setup.ps1 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $initMarker -Encoding UTF8 -Force
+        [System.IO.File]::WriteAllText($initMarker, "windows-setup.ps1 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')", (New-Object System.Text.UTF8Encoding($false)))
         $created += $slug
     }
 
@@ -1299,7 +1329,7 @@ function Invoke-Phase4($repos) {
                     }) -Force
                 }
             }
-            $reposConfig | ConvertTo-Json -Depth 10 | Out-File -FilePath $reposPath -Encoding UTF8 -Force
+            Write-JsonFile -Object $reposConfig -Path $reposPath -Depth 10
             Write-Success "  kb 路径已写入 repos.json"
         } catch {
             Write-Warn "  repos.json kb 字段更新失败: $_"
@@ -1353,71 +1383,55 @@ function Invoke-Phase5($auth) {
 
     $mcpPath = Join-Path $script:RootDir ".mcp.json"
 
-    # 已存在非空 .mcp.json → 检查是否与当前认证模式一致
-    $currentMcpMode = ""
-    if (Test-Path $mcpPath) {
+    # 读旧 .mcp.json（如存在），仅更新 mcpServers.github（保留其它 server）
+    if (-not (Test-Path $mcpPath)) {
+        $mcpJson = @{ mcpServers = @{} }
+    } else {
         try {
             $mcpRaw = Get-Content $mcpPath -Raw -Encoding UTF8
-            if ($mcpRaw.Trim() -ne "{}") {
-                $mcpJson = $mcpRaw | ConvertFrom-Json
-                $ghCfg = $mcpJson.mcpServers.github
-                if ($ghCfg) {
-                    if ($ghCfg.command -eq "gh") { $currentMcpMode = "oauth" }
-                    elseif ($ghCfg.args.GITHUB_PAT -or ($ghCfg.headers.Authorization -match "GITHUB_TOKEN")) { $currentMcpMode = "pat" }
-                }
-            }
-        } catch { }
-        if ($currentMcpMode -eq $auth.Mode) {
-            Write-Warn ".mcp.json 已存在且与当前认证模式一致（$($auth.Mode)），无需覆盖"
-            Write-Info ""
-            return
-        } elseif ($currentMcpMode -and $currentMcpMode -ne $auth.Mode) {
-            Write-Warn ".mcp.json 当前为 $currentMcpMode 模式，与认证模式 $($auth.Mode) 不一致——覆盖更新"
-        }
+            $mcpJson = $mcpRaw | ConvertFrom-Json
+            if ($mcpJson -isnot [hashtable]) { $mcpJson = ConvertTo-HashtableDeep $mcpJson }
+        } catch { $mcpJson = @{ mcpServers = @{} } }
+        if (-not $mcpJson.ContainsKey('mcpServers') -or $mcpJson['mcpServers'] -isnot [hashtable]) { $mcpJson['mcpServers'] = @{} }
     }
-
-    # .mcp.json 不存在 / 为空 / 模式不匹配 → 生成新的
+    # github server — 检测 gh 全路径（避免 Claude Code PowerShell 环境找不到 gh）
+    $ghCmd = "gh"
+    foreach ($p in @("$env:ProgramFiles\GitHub CLI\gh.exe", "$env:LOCALAPPDATA\Programs\GitHub CLI\gh.exe", "$env:USERPROFILE\scoop\shims\gh.exe")) {
+        if (Test-Path $p) { $ghCmd = $p; break }
+    }
     if ($auth.Mode -eq "oauth") {
-        $mcpJson = @{
-            mcpServers = @{
-                github = @{
-                    command = "gh"
-                    args = @("mcp")
-                    env = @{ GITHUB_READ_ONLY = "1" }
-                }
-            }
-        }
+        $mcpJson['mcpServers']['github'] = @{ command = $ghCmd; args = @("mcp"); env = @{ GITHUB_READ_ONLY = "1" } }
     } else {
-        $mcpJson = @{
-            mcpServers = @{
-                github = @{
-                    type = "http"
-                    url = "https://api.githubcopilot.com/mcp"
-                    headers = @{
-                        Authorization = "Bearer `${GITHUB_TOKEN}"
-                        "X-MCP-Readonly" = "true"
-                    }
-                }
-            }
+        $mcpJson['mcpServers']['github'] = @{
+            type = "http"; url = "https://api.githubcopilot.com/mcp"
+            headers = @{ Authorization = "Bearer `${GITHUB_TOKEN}"; "X-MCP-Readonly" = "true" }
         }
     }
-    $mcpJson | ConvertTo-Json -Depth 3 | Out-File -FilePath $mcpPath -Encoding UTF8 -Force
+    Write-JsonFile -Object $mcpJson -Path $mcpPath -Depth 4
     Write-Success ".mcp.json 已生成（$($auth.Mode) 模式）"
 
     # Jira/Atlassian Plugin — 写入 settings.json
     $settingsPath = Join-Path $script:RootDir ".claude\settings.json"
+    # hashtable 键赋值，避免 PS5.1 下 hashtable+Add-Member+ConvertTo-Json 丢配置（首跑会丢 Jira Plugin）
     $settings = @{}
     if (Test-Path $settingsPath) {
-        try { $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+        try { $settings = ConvertTo-HashtableDeep (Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { $settings = @{} }
     }
-    if (-not $settings.enabledPlugins) { $settings | Add-Member -MemberType NoteProperty -Name "enabledPlugins" -Value @{} -Force }
-    $settings.enabledPlugins | Add-Member -MemberType NoteProperty -Name "atlassian@claude-plugins-official" -Value $true -Force
-    if (-not $settings.extraKnownMarketplaces) { $settings | Add-Member -MemberType NoteProperty -Name "extraKnownMarketplaces" -Value @{} -Force }
-    if (-not $settings.extraKnownMarketplaces."claude-plugins-official") {
-        $marketplace = @{ source = @{ source = "github"; repo = "anthropics/claude-plugins-official" } }
-        $settings.extraKnownMarketplaces | Add-Member -MemberType NoteProperty -Name "claude-plugins-official" -Value $marketplace -Force
+    if ($settings -isnot [hashtable]) { $settings = @{} }
+    # PS 5.1 ConvertFrom-Json 会将单元素数组退化为字符串，强制恢复已知数组字段
+    if ($settings.ContainsKey('permissions') -and $settings['permissions'] -is [hashtable]) {
+        $perms = $settings['permissions']
+        if ($perms.ContainsKey('allow') -and $perms['allow'] -is [string]) { $perms['allow'] = @($perms['allow']) }
+        if ($perms.ContainsKey('deny') -and $perms['deny'] -is [string]) { $perms['deny'] = @($perms['deny']) }
+        if ($perms.ContainsKey('ask') -and $perms['ask'] -is [string]) { $perms['ask'] = @($perms['ask']) }
     }
-    $settings | ConvertTo-Json -Depth 4 | Out-File -FilePath $settingsPath -Encoding UTF8 -Force
+    if (-not $settings.ContainsKey('enabledPlugins') -or $settings['enabledPlugins'] -isnot [hashtable]) { $settings['enabledPlugins'] = @{} }
+    $settings['enabledPlugins']['atlassian@claude-plugins-official'] = $true
+    if (-not $settings.ContainsKey('extraKnownMarketplaces') -or $settings['extraKnownMarketplaces'] -isnot [hashtable]) { $settings['extraKnownMarketplaces'] = @{} }
+    if (-not $settings['extraKnownMarketplaces'].ContainsKey('claude-plugins-official')) {
+        $settings['extraKnownMarketplaces']['claude-plugins-official'] = @{ source = @{ source = "github"; repo = "anthropics/claude-plugins-official" } }
+    }
+    Write-JsonFile -Object $settings -Path $settingsPath -Depth 10
     Write-Success "settings.json 已更新（Jira Plugin）"
 
     # 校验
@@ -1461,8 +1475,7 @@ function Invoke-Phase6($env, $auth, $repos) {
     # GitHub
     Write-Info "[GitHub]"
     if ($auth.Mode -eq "oauth" -and $env.GhFound) {
-        $ghStatus = & $env.GhPath auth status 2>&1
-        if ($LASTEXITCODE -eq 0) {
+        if (Test-GhAuthStatus $env.GhPath) {
             Write-Success "  gh 认证状态: OK"
         } else {
             Write-Warn "  gh 认证状态异常，请运行: gh auth login"
@@ -1633,7 +1646,7 @@ function Invoke-AutoScan {
         }
         if (-not $reposObj) { $reposObj = @{} }
         $reposObj.repos = $repos
-        $reposObj | ConvertTo-Json -Depth 4 | Out-File -FilePath $reposPath -Encoding UTF8 -Force
+        Write-JsonFile -Object $reposObj -Path $reposPath -Depth 4
     }
 }
 
@@ -2154,7 +2167,7 @@ function Invoke-Phase8-RefreshDependencyGraph {
     }
 
     # --- 原子写入 ---
-    $depGraph | ConvertTo-Json -Depth 10 | Out-File -FilePath $depGraphTmp -Encoding UTF8 -Force
+    Write-JsonFile -Object $depGraph -Path $depGraphTmp -Depth 10
     if (Test-Path $depGraphPath) { Remove-Item $depGraphPath -Force }
     Move-Item -Path $depGraphTmp -Destination $depGraphPath -Force
 
@@ -2163,7 +2176,7 @@ function Invoke-Phase8-RefreshDependencyGraph {
     foreach ($kv in $newData.GetEnumerator()) {
         $cacheObj[$kv.Key] = $kv.Value
     }
-    $cacheObj | ConvertTo-Json -Depth 5 -Compress | Out-File -FilePath $cachePath -Encoding UTF8 -Force
+    Write-JsonFile -Object $cacheObj -Path $cachePath -Depth 5 -Compress
 
     Write-Success "依赖图已写入: .claude/dependency-graph.json"
     Write-Info "  edges: $($edges.Count) 条"

@@ -131,7 +131,7 @@ dongmei-ma 根据自然语言信号判定查询深度（kb-keeper 参与由 `kbA
 | `kb-keeper` | 唯一 Obsidian KB 读写口：concept-map 索引检索 + 结论沉淀。不读源码 | **无**（经 obsidian CLI，非 mcp） |
 | `code-analyst` | 定位解读 core-ng 代码；独占本地 git（Bash 直读）；调用 git-analysis skill 统一产出 `repo_timeline` + 工单号抽取；按叙事单元分批交付；远端取码经 git-tracer | **无**（本地代码直读 + 本地 git 经 Bash；远端经 git-tracer） |
 | `git-tracer` | GitHub 远端网关，**独占 GitHub MCP**（只读子集）；远端取码响应；远端跨仓验证；态C 过时检测（fetch+ls-remote）。不产出 `repo_timeline` | `mcp__github__*`（只读） |
-| `jira-tracer` | 经 Atlassian Plugin 取工单业务原因与因果脉络。收 ticket_ids → 分批查 Jira → jira_reasons_partial | `mcp__atlassian__*`（只读） |
+| `jira-tracer` | 经 Atlassian Plugin 取工单业务原因与因果脉络。收 ticket_ids → 分批查 Jira → jira_reasons_partial | `mcp__plugin_atlassian_atlassian__*`（只读） |
 | `synthesizer` | 综合 code+git+jira → 结论（9 类场景）；分析方法沉淀为 skill | **无**（消费上游三源产物） |
 
 > `design-tracer`（Figma 设计追溯）为二期。
@@ -143,7 +143,6 @@ teammate 形态下 MCP server 由官方 plugin 自行注册，会话层面对全
 1. **声明层**：每 agent 定义含 `职责范围`/`允许使用的 MCP 服务`/`边界约束` 三段固定区块——禁调领域外 `mcp__`，跨域需求经消息向 owner 请求。
 2. **校验层**：evidence-check skill 自检时标记结论引用声明范围外工具的边界违规。
 
-> L1 tools 白名单在 body > ~40 行时不生效（2026-06-16 qa-engineer 实证），已降级为设计意图文档。本系统「独占」= 声明层 + 校验层软边界，不依赖、不宣称物理隔离。
 
 ### §4.3 关键归属
 
@@ -164,7 +163,7 @@ teammate 形态下 MCP server 由官方 plugin 自行注册，会话层面对全
 
 dongmei-ma 对任何溯源链路环节不具备该领域 tools/权限/能力，绝不自行为其补位。成员无响应时执行**拉回流程**（三步升级）：SendMessage 重新拉回 → TaskList+TaskGet 确认状态 → 升级汇报用户。
 
-**严禁**：自行接手任务、Agent spawn 替代成员、TeamCreate 新建团队绕过。详细规则见 `dongmei-ma.md` §7。
+**严禁**：自行接手任务、spawn 替代成员、新建团队绕过。详细规则见 `dongmei-ma.md` §7。
 
 ### §4.6 启动自检与就绪门控
 

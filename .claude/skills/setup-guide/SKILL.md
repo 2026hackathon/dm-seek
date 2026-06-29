@@ -1,4 +1,4 @@
-﻿---
+---
 name: setup-guide
 description: dm-seek 开箱引导/配置参考手册——GitHub 双轨认证、repos.json 骨架、故障排查。主入口为初始化脚本，本文为补充参考。
 ---
@@ -84,7 +84,7 @@ description: dm-seek 开箱引导/配置参考手册——GitHub 双轨认证、
 
 1. 在 Claude Code 中执行：`/plugin install atlassian@claude-plugins-official`
 2. `/mcp` → Atlassian → Authenticate → 浏览器 OAuth 授权
-3. 验证：`mcp__atlassian__search_issues` 可用
+3. 验证：`mcp__plugin_atlassian_atlassian__getAccessibleAtlassianResources`（取 cloudId）/ `mcp__plugin_atlassian_atlassian__searchJiraIssuesUsingJql` 可用
 
 ---
 

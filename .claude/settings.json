@@ -15,8 +15,6 @@
     }
   },
   "permissions": {
-    "allow": [
-      "Powershell"
-    ]
+    "allow":  ["PowerShell(*)"]
   }
 }
