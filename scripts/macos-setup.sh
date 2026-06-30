@@ -76,7 +76,7 @@ get_branch_choice() {
 get_init_status() {
     local git_found=false gh_found=false gh_auth_ok=false gh_mcp_ok=false
     local obsidian_found=false obsidian_path="" brew_avail=false
-    local auth_mode="none" mcp_json_mode="" mcp_json_exists=false
+    local auth_mode="none" mcp_json_mode="empty" mcp_json_exists=false
     local repo_count=0 repo_local_count=0 repo_remote_count=0
     local kb_total=0 kb_done=0
 
@@ -110,14 +110,14 @@ get_init_status() {
     local mcp_path="$ROOT_DIR/.mcp.json"
     if [[ -f "$mcp_path" ]]; then
         mcp_json_exists=true
-        local mcp_raw; mcp_raw="$(cat "$mcp_path" 2>/dev/null)"
-        if [[ "$mcp_raw" == "{}" || "$mcp_raw" == '{"mcpServers":{}}' ]]; then
-            mcp_json_mode="empty"
-        elif echo "$mcp_raw" | grep -q '"command".*"gh"'; then
-            mcp_json_mode="oauth"
-        elif echo "$mcp_raw" | grep -q 'GITHUB_TOKEN'; then
-            mcp_json_mode="pat"
-        fi
+        # OAuth=github 有 command（"gh" 或全路径皆可）；PAT=含 GITHUB_TOKEN；其余 empty
+        mcp_json_mode="$(python3 -c '
+import json,sys
+try: g=json.load(open(sys.argv[1])).get("mcpServers",{}).get("github",{})
+except Exception: g={}
+print("empty" if not g else ("oauth" if g.get("command") else ("pat" if "GITHUB_TOKEN" in json.dumps(g) else "empty")))
+' "$mcp_path" 2>/dev/null)"
+        [[ -z "$mcp_json_mode" ]] && mcp_json_mode="empty"
     fi
 
     if [[ "$mcp_json_mode" != "empty" ]]; then
@@ -208,11 +208,12 @@ show_status() {
     info "  git:       $gi"
     info "  gh CLI:    $ghi"
     info "  Obsidian:  $oi"
-    info "  GitHub:    ${auth^^}"
+    local auth_label; if [[ "$auth" == "none" || -z "$auth" ]]; then auth_label="未配置"; else auth_label="${auth^^}"; fi
+    info "  GitHub:    $auth_label"
     # .mcp.json consistency check
-    local mcp_str="$mcp"
-    if [[ "$auth" != "none" ]] && [[ "$mcp" != "empty" ]] && [[ "$auth" != "$mcp" ]]; then
-        mcp_str="$mcp [WARN: 与认证模式不一致]"
+    local mcp_str; if [[ "$mcp" == "empty" || -z "$mcp" ]]; then mcp_str="待生成"; else mcp_str="${mcp^^}"; fi
+    if [[ "$auth" != "none" && -n "$auth" ]] && [[ "$mcp" != "empty" && -n "$mcp" ]] && [[ "$auth" != "$mcp" ]]; then
+        mcp_str="$mcp_str [WARN: 与认证模式不一致]"
     fi
     info "  .mcp.json: $mcp_str"
     local repo_str="$rc 个仓库 ($rlc 有本地, $rrc 仅远端)"
@@ -227,13 +228,16 @@ show_menu() {
     local auth mcp rc kbd kbt
     auth=$(val AuthMode); mcp=$(val McpJsonMode)
     rc=$(val RepoCount); kbd=$(val KbVaultDone); kbt=$(val KbVaultTotal)
+    local auth_label mcp_label
+    if [[ "$auth" == "none" || -z "$auth" ]]; then auth_label="未配置"; else auth_label="${auth^^}"; fi
+    if [[ "$mcp" == "empty" || -z "$mcp" ]]; then mcp_label="待生成"; else mcp_label="${mcp^^}"; fi
     echo
     info "  操作："
     info "    [1] 重新探测环境"
-    info "    [2] 配置 GitHub 认证 (当前: ${auth^^})"
+    info "    [2] 配置 GitHub 认证 (当前: $auth_label)"
     info "    [3] 管理仓库配置 ($rc 个仓库)"
     info "    [4] 初始化 KB Vault ($kbd/$kbt)"
-    info "    [5] 生成 .mcp.json (当前: $mcp)"
+    info "    [5] 生成 .mcp.json (当前: $mcp_label)"
     info "    [6] 连通性自检"
     info "    [7] 检查仓库更新"
     info "    [8] 刷新依赖图"
@@ -597,8 +601,15 @@ for slug, r in d.get('repos',{}).items():
                     local slug; slug="${full_name##*/}"; local owner; owner="${full_name%%/*}"
                     local clone_path="$dm_repos/$slug"
                     info "  Clone: $full_name -> dm-repos/$slug ..."
-                    git clone --branch "$def_br" "https://github.com/$full_name.git" "$clone_path" --progress 2>&1 | tail -3
-                    if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+                    # OAuth 取 gh token 经内联 credential helper + GIT_TERMINAL_PROMPT=0 免交互（私有仓库不再等凭据弹窗卡住）；不 tail，git 原生 --progress 实时显示
+                    local _token; _token="$(gh auth token 2>/dev/null)"
+                    if [[ -n "$_token" ]]; then
+                        DMSEEK_CLONE_PAT="$_token" GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$DMSEEK_CLONE_PAT"; }; f' clone --branch "$def_br" "https://github.com/$full_name.git" "$clone_path" --progress
+                    else
+                        GIT_TERMINAL_PROMPT=0 git clone --branch "$def_br" "https://github.com/$full_name.git" "$clone_path" --progress
+                    fi
+                    local rc=$?
+                    if [[ $rc -eq 0 ]]; then
                         local chosen; chosen=$(get_branch_choice "$def_br" "$clone_path" "$owner" "$slug")
                         if [[ "$chosen" != "$def_br" ]]; then
                             git -C "$clone_path" fetch origin "$chosen" 2>/dev/null

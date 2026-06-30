@@ -5,7 +5,7 @@ description: 三源综合分析方法库（六步骨架+9场景method）——sy
 
 # synthesis-core — 综合分析方法库（六步骨架 + 9 场景 method）
 
-> 本 skill 是 synthesizer 分析方法的**单一权威载体**。所有 9 类场景共享**通用六步骨架**，差异只在「侧重维度」与「特化步骤」。**单 skill 多 method**：9 个场景方法以 method 片段收于本 skill 场景库（§2），避免碎片化。
+> 本 skill 是 synthesizer 分析方法的**单一权威载体**。**通用六步骨架为默认基线**（每次综合恒执行）；场景 method 仅在命中时叠加「侧重维度 + 特化步骤」，未命中按通用六步正常产出、不降级。场景为**开放集合**，method 片段收于 §2 场景库。
 
 ## 何时用
 
@@ -28,9 +28,9 @@ synthesizer 收齐三源（code-analyst `code_location_set` + `repo_timeline` + 
 | S5 | 矛盾标记 | 标记三源互相冲突处（代码现状 vs 工单描述不符——正是「马冬梅」要解的认知偏差）；冲突以**代码为准**陈述，记录冲突另一方为偏差，写入对应 conclusion + `unknowns`。 | conclusion + unknowns |
 | S6 | 自检交棒 | 填 `analysisMethod`（method id）、`sourcesPresent`、`unknowns`，交 S7 evidence-check 校验。 | 整个 synthesis 载荷 |
 
-## 2. 九类场景 method 库（method id 命名 `<scene-slug>-v1`）
+## 2. 场景 method 库（开放集合，叠加于通用六步；method id 命名 `<scene-slug>-v1`）
 
-每类 = 通用六步 + 侧重维度 + 特化步骤（在 S2/S3 注入）。`analysisMethod` 取对应 method id。
+每类 = 通用六步 + 侧重维度 + 特化步骤（在 S2/S3 注入）。`analysisMethod` 取对应 method id；未命中任一场景则取 `synthesis-core-generic-v1`。下表非穷举、可扩展。
 
 | # | 场景 (runtime-spec §3) | method id | 主侧重维度 | 特化步骤 | 三源关键依赖 |
 | --- | --- | --- | --- | --- | --- |
@@ -48,8 +48,8 @@ synthesizer 收齐三源（code-analyst `code_location_set` + `repo_timeline` + 
 
 ## 3. method 选择与降级
 
-- 选型来源：dongmei-ma `query_plan.intent` / `scenario`（契约 §2.1，intent 枚举对齐场景 1~9）。
-- intent 未明或跨场景 → 通用六步，`analysisMethod=synthesis-core-generic-v1`。
+- 选型来源：dongmei-ma `query_plan.intent` / `scenario`（runtime-spec §3 开放词汇表）。
+- intent 未明、留空或跨场景 → 通用六步，`analysisMethod=synthesis-core-generic-v1`，不降级。
 - 任一场景三源不全时**不空想**：缺的维度进 `unknowns`，由 S7 evidence-check 判置信度并可能触发返工——本骨架不负责补源（补源靠契约 §7 返工循环）。
 
 ## 4. evidence 组织规范（每条结论挂出处）

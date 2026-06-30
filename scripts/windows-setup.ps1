@@ -173,7 +173,7 @@ function Get-InitStatus {
         DisabledRepoCount = 0
         KbVaultTotal   = 0
         KbVaultDone    = 0
-        McpJsonMode    = ""       # oauth / pat / empty
+        McpJsonMode    = "empty"  # oauth / pat / empty（默认 empty，避免无 .mcp.json 时落空字符串）
         McpJsonExists  = $false
     }
 
@@ -240,12 +240,15 @@ function Get-InitStatus {
             $mcpJson = Get-Content $mcpPath -Raw -Encoding UTF8 | ConvertFrom-Json
             $status.McpJsonExists = $true
             $ghCfg = $mcpJson.mcpServers.github
+            # OAuth 模式以「有 command」判定（gh 子进程，command 可能是 "gh" 或全路径 gh.exe）；PAT 模式以 http+GITHUB_TOKEN 判定。其余归 empty，避免 McpJsonMode 落空字符串
             if (-not $ghCfg) {
                 $status.McpJsonMode = "empty"
-            } elseif ($ghCfg.command -eq "gh") {
+            } elseif ($ghCfg.command) {
                 $status.McpJsonMode = "oauth"
             } elseif ($ghCfg.args.GITHUB_PAT -or ($ghCfg.headers.Authorization -match "GITHUB_TOKEN")) {
                 $status.McpJsonMode = "pat"
+            } else {
+                $status.McpJsonMode = "empty"
             }
         } catch {
             $status.McpJsonMode = "empty"
@@ -327,8 +330,9 @@ function Show-Status($s) {
         "pat"   { "PAT (GITHUB_TOKEN)" }
         default { "未配置" }
     }
-    $authColor = if ($s.AuthMode -eq "none") { "Red" } else { "Green" }
-    Write-Host ("  GitHub:    $($s.AuthMode.ToUpper()) — $authStr") -ForegroundColor $authColor
+    $authColor = if ($s.AuthMode -eq "none" -or [string]::IsNullOrEmpty($s.AuthMode)) { "Red" } else { "Green" }
+    $authLabel = if ($s.AuthMode -eq "none" -or [string]::IsNullOrEmpty($s.AuthMode)) { "未配置" } else { "$($s.AuthMode.ToUpper()) — $authStr" }
+    Write-Host ("  GitHub:    $authLabel") -ForegroundColor $authColor
 
     # .mcp.json 一致性
     $mcpStr = if ($s.McpJsonMode -eq "empty") { "空（待生成）" } else { $s.McpJsonMode.ToUpper() }
@@ -358,13 +362,15 @@ function Show-Status($s) {
 }
 
 function Show-MainMenu($s) {
+    $authMenu = if ($s.AuthMode -eq "none" -or [string]::IsNullOrEmpty($s.AuthMode)) { "未配置" } else { $s.AuthMode.ToUpper() }
+    $mcpMenu = if ($s.McpJsonMode -eq "empty" -or [string]::IsNullOrEmpty($s.McpJsonMode)) { "待生成" } else { $s.McpJsonMode.ToUpper() }
     Write-Host ""
     Write-Host "  操作：" -ForegroundColor White
     Write-Host "    [1] 重新探测环境" -ForegroundColor White
-    Write-Host "    [2] 配置 GitHub 认证 (当前: $($s.AuthMode.ToUpper()))" -ForegroundColor White
+    Write-Host "    [2] 配置 GitHub 认证 (当前: $authMenu)" -ForegroundColor White
     Write-Host "    [3] 管理仓库配置 ($($s.RepoCount) 个仓库)" -ForegroundColor White
     Write-Host "    [4] 初始化 KB Vault ($($s.KbVaultDone)/$($s.KbVaultTotal))" -ForegroundColor White
-    Write-Host "    [5] 生成 .mcp.json (当前: $($s.McpJsonMode.ToUpper()))" -ForegroundColor White
+    Write-Host "    [5] 生成 .mcp.json (当前: $mcpMenu)" -ForegroundColor White
     Write-Host "    [6] 连通性自检" -ForegroundColor White
     Write-Host "    [7] 检查仓库更新" -ForegroundColor White
     Write-Host "    [8] 刷新依赖图" -ForegroundColor White
@@ -553,7 +559,7 @@ function Invoke-Phase2($env) {
             $mcp = Get-Content $mcpPath -Raw -Encoding UTF8 | ConvertFrom-Json
             $ghCfg = $mcp.mcpServers.github
             if ($ghCfg) {
-                if ($ghCfg.command -eq "gh") { $currentMode = "oauth" }
+                if ($ghCfg.command) { $currentMode = "oauth" }
                 elseif ($ghCfg.args.GITHUB_PAT -or ($ghCfg.headers.Authorization -match "GITHUB_TOKEN")) { $currentMode = "pat" }
             }
         } catch { }
@@ -1046,53 +1052,68 @@ function Invoke-Phase3($env, $auth) {
 
                             Write-Info "  Clone: $($r.fullName) → dm-repos/$slug ..."
                             try {
-                                # PAT 模式用 credential helper 避免 PAT 暴露到进程列表
+                                # 凭据：PAT 模式用 PAT；OAuth 模式取 gh token，二者都经内联 credential helper 免交互（避免私有仓库 clone 等待凭据弹窗而卡住）。取不到则回退 ambient 凭据。
                                 $cloneUrl = "https://github.com/$($r.fullName).git"
-                                # 后台 job 运行 clone，主线程解析进度画进度条
+                                $cloneCred = $auth.PAT
+                                if (-not $cloneCred -and $env.GhFound) {
+                                    try { $cloneCred = (& $env.GhPath auth token 2>$null | Select-Object -First 1) } catch { $cloneCred = $null }
+                                    if ($cloneCred) { $cloneCred = "$cloneCred".Trim() }
+                                }
+                                # 进度写临时文件：git --progress 用 \r 刷新，PS job 流不按 \r 分行、难实时解析。
+                                # job stdout 仅回退出码标记；stderr（进度+错误）重定向到 $progFile，主线程 tail 该文件。
+                                $progFile = [System.IO.Path]::GetTempFileName()
                                 $job = Start-Job -ScriptBlock {
-                                    param($url, $branch, $path, $pat)
+                                    param($url, $branch, $path, $pat, $pf)
                                     $env:GIT_TERMINAL_PROMPT = "0"
                                     if ($pat) {
                                         $env:DMSEEK_CLONE_PAT = $pat
                                         $helper = '!f() { echo username=x-access-token; echo password=$DMSEEK_CLONE_PAT; }; f'
-                                        git -c "credential.helper=" -c "credential.helper=$helper" clone --branch $branch $url $path --progress 2>&1
+                                        git -c "credential.helper=" -c "credential.helper=$helper" clone --branch $branch $url $path --progress 2>$pf
                                     } else {
-                                        git clone --branch $branch $url $path --progress 2>&1
+                                        git clone --branch $branch $url $path --progress 2>$pf
                                     }
                                     "__GITEXIT__$LASTEXITCODE"
-                                } -ArgumentList $cloneUrl, $branch, $clonePath, $auth.PAT
-                                while ($job.State -eq "Running") {
+                                } -ArgumentList $cloneUrl, $branch, $clonePath, $cloneCred, $progFile
                                 $percent = 0
-                                    $latest = Receive-Job $job 2>$null | Select-Object -Last 1
-                                    if ($latest -match '(\d+)%') { $percent = [int]$Matches[1] }
+                                $startAt = Get-Date
+                                while ($job.State -eq "Running") {
+                                    # 共享读句柄读取仍被 git 写入的进度文件，按最后一个百分比取当前进度
+                                    $raw = $null
+                                    try {
+                                        $fs = [System.IO.File]::Open($progFile, 'Open', 'Read', 'ReadWrite')
+                                        $sr = New-Object System.IO.StreamReader($fs)
+                                        $raw = $sr.ReadToEnd(); $sr.Close(); $fs.Close()
+                                    } catch { $raw = $null }
+                                    if ($raw) {
+                                        $pm = [regex]::Matches($raw, '(\d+)%')
+                                        if ($pm.Count -gt 0) { $percent = [int]$pm[$pm.Count - 1].Groups[1].Value }
+                                    }
+                                    $elapsed = [int]((Get-Date) - $startAt).TotalSeconds
                                     $barLen = [Math]::Floor($percent / 2.5)
                                     $bar = "[" + ("#" * $barLen) + (" " * (40 - $barLen)) + "]"
-                                    Write-Host "`r  Clone $bar $percent%" -NoNewline
-                                    Start-Sleep -Milliseconds 200
+                                    Write-Host ("`r  Clone $bar $percent%  ${elapsed}s") -NoNewline
+                                    Start-Sleep -Milliseconds 300
                                 }
-                                # 收尾
-                                $rawOutput = Receive-Job $job 2>$null
-                                Remove-Job $job -Force
-                                # 分离 git clone 真实退出码标记（不再仅靠扫描 fatal: 判定成败）
-                                $gitExit = 0; $allOutput = @()
-                                foreach ($ln in $rawOutput) {
+                                # 收尾：退出码取自 job stdout 标记；错误文本取自进度文件
+                                $gitExit = 0
+                                foreach ($ln in (Receive-Job $job 2>$null)) {
                                     if ("$ln" -match '^__GITEXIT__(\d+)$') { $gitExit = [int]$Matches[1] }
-                                    else { $allOutput += $ln }
                                 }
-                                if ($percent -ge 100) { $percent = 100 }
-                                $barLen = [Math]::Floor($percent / 2.5)
+                                Remove-Job $job -Force
+                                $errText = ""
+                                try { $errText = Get-Content $progFile -Raw -ErrorAction Stop } catch { $errText = "" }
+                                Remove-Item $progFile -Force -ErrorAction SilentlyContinue
+                                $allOutput = @(); if ($errText) { $allOutput = $errText -split "[`r`n]+" | Where-Object { $_ } }
+                                $finalPct = if ($gitExit -eq 0) { 100 } else { $percent }
+                                $barLen = [Math]::Floor($finalPct / 2.5)
                                 $bar = "[" + ("#" * $barLen) + (" " * (40 - $barLen)) + "]"
-                                Write-Host "`r  Clone $bar 100%"
-                                # 以 git clone 真实退出码为准，再扫描 fatal: 作补充展示
+                                Write-Host "`r  Clone $bar $finalPct%            "
+                                # 以 git clone 真实退出码为准，再扫描 fatal: 作补充展示（凭据打码）
                                 $exitCode = $gitExit
                                 $allOutput | ForEach-Object {
-                                    if ($_ -match "^fatal:") { $exitCode = 1; Write-Warn "    $_" }
-                                }
-                                if ($auth.PAT -and $allOutput) {
-                                    $allOutput | ForEach-Object {
-                                        $line = $_ -replace [regex]::Escape($auth.PAT), "***"
-                                        if ($line -match "^fatal:" -or $line -match "^error:") { Write-Warn "    $line" }
-                                    }
+                                    $line = if ($cloneCred) { $_ -replace [regex]::Escape($cloneCred), "***" } else { $_ }
+                                    if ($line -match "^fatal:") { $exitCode = 1; Write-Warn "    $line" }
+                                    elseif ($line -match "^error:") { Write-Warn "    $line" }
                                 }
                                 if ($exitCode -eq 0) {
                                     $resolvedPath = (Resolve-Path $clonePath).Path
