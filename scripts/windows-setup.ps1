@@ -1383,7 +1383,7 @@ function Invoke-Phase5($auth) {
 
     $mcpPath = Join-Path $script:RootDir ".mcp.json"
 
-    # 读旧 .mcp.json（如存在），仅更新 mcpServers.github（保留其它 server）
+    # 读旧 .mcp.json（如存在），更新 mcpServers.github + plugin_atlassian_atlassian（保留其它 server）
     if (-not (Test-Path $mcpPath)) {
         $mcpJson = @{ mcpServers = @{} }
     } else {
@@ -1407,12 +1407,14 @@ function Invoke-Phase5($auth) {
             headers = @{ Authorization = "Bearer `${GITHUB_TOKEN}"; "X-MCP-Readonly" = "true" }
         }
     }
+    # Atlassian/Jira — 项目级 .mcp.json，Streamable HTTP；server 名固定 plugin_atlassian_atlassian（工具名 mcp__plugin_atlassian_atlassian__*）
+    $mcpJson['mcpServers']['plugin_atlassian_atlassian'] = @{ type = "http"; url = "https://mcp.atlassian.com/v1/mcp" }
     Write-JsonFile -Object $mcpJson -Path $mcpPath -Depth 4
-    Write-Success ".mcp.json 已生成（$($auth.Mode) 模式）"
+    Write-Success ".mcp.json 已生成（github=$($auth.Mode) 模式 + atlassian HTTP）"
 
-    # Jira/Atlassian Plugin — 写入 settings.json
+    # settings.json — 禁用 atlassian plugin（避免与 .mcp.json 同名 server 命名空间冲突）
     $settingsPath = Join-Path $script:RootDir ".claude\settings.json"
-    # hashtable 键赋值，避免 PS5.1 下 hashtable+Add-Member+ConvertTo-Json 丢配置（首跑会丢 Jira Plugin）
+    # hashtable 键赋值，避免 PS5.1 下 hashtable+Add-Member+ConvertTo-Json 丢配置
     $settings = @{}
     if (Test-Path $settingsPath) {
         try { $settings = ConvertTo-HashtableDeep (Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { $settings = @{} }
@@ -1426,13 +1428,10 @@ function Invoke-Phase5($auth) {
         if ($perms.ContainsKey('ask') -and $perms['ask'] -is [string]) { $perms['ask'] = @($perms['ask']) }
     }
     if (-not $settings.ContainsKey('enabledPlugins') -or $settings['enabledPlugins'] -isnot [hashtable]) { $settings['enabledPlugins'] = @{} }
-    $settings['enabledPlugins']['atlassian@claude-plugins-official'] = $true
-    if (-not $settings.ContainsKey('extraKnownMarketplaces') -or $settings['extraKnownMarketplaces'] -isnot [hashtable]) { $settings['extraKnownMarketplaces'] = @{} }
-    if (-not $settings['extraKnownMarketplaces'].ContainsKey('claude-plugins-official')) {
-        $settings['extraKnownMarketplaces']['claude-plugins-official'] = @{ source = @{ source = "github"; repo = "anthropics/claude-plugins-official" } }
-    }
+    # 显式置 false：plugin 与 .mcp.json 不能同时注册 plugin_atlassian_atlassian 命名空间
+    $settings['enabledPlugins']['atlassian@claude-plugins-official'] = $false
     Write-JsonFile -Object $settings -Path $settingsPath -Depth 10
-    Write-Success "settings.json 已更新（Jira Plugin）"
+    Write-Success "settings.json 已更新（已禁用 atlassian plugin，改用 .mcp.json 远程 server）"
 
     # 校验
     $files = @(
@@ -1484,22 +1483,32 @@ function Invoke-Phase6($env, $auth, $repos) {
         Write-Info "  PAT 模式: 请重启 Claude Code 后运行 /mcp 确认 github server 已连接"
     }
 
-    # Jira
+    # Jira / Atlassian — 检查 .mcp.json 远程 server（非 plugin，确保对 teammate 可见）
     Write-Info "[Jira]"
-    $settingsPath = Join-Path $script:RootDir ".claude\settings.json"
+    $mcpPath = Join-Path $script:RootDir ".mcp.json"
     $jiraConfigured = $false
+    if (Test-Path $mcpPath) {
+        try {
+            $mcpJson = Get-Content $mcpPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($mcpJson.mcpServers.'plugin_atlassian_atlassian') { $jiraConfigured = $true }
+        } catch { }
+    }
+    # 提醒：若 plugin 仍启用，会与 .mcp.json 同名 server 冲突
+    $settingsPath = Join-Path $script:RootDir ".claude\settings.json"
     if (Test-Path $settingsPath) {
         try {
             $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($settings.enabledPlugins."atlassian@claude-plugins-official") { $jiraConfigured = $true }
+            if ($settings.enabledPlugins."atlassian@claude-plugins-official" -eq $true) {
+                Write-Warn "  [WARN] atlassian plugin 仍启用——会与 .mcp.json server 命名空间冲突，请运行 [5] 重新生成以禁用"
+            }
         } catch { }
     }
     if ($jiraConfigured) {
-        Write-Success "  Jira Plugin 已配置（settings.json）"
+        Write-Success "  Atlassian MCP 已配置（.mcp.json，Streamable HTTP）"
     } else {
-        Write-Warn "  Jira Plugin 未配置，请运行 [5] 生成配置"
+        Write-Warn "  Atlassian MCP 未配置，请运行 [5] 生成配置"
     }
-    Write-Info "  首次使用需认证：/mcp → Atlassian → Authenticate → 浏览器 OAuth"
+    Write-Info "  首次使用需认证：/mcp → plugin_atlassian_atlassian → Authenticate → 浏览器 OAuth"
 
     # Obsidian — 独立重检，不依赖 Phase 1 的缓存结果
     Write-Info "[Obsidian KB]"

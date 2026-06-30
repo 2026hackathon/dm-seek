@@ -807,7 +807,7 @@ phase5() {
         warn ".mcp.json 无法生成：GitHub 认证未配置"; return
     fi
     local mcp_path="$ROOT_DIR/.mcp.json"
-    [[ -f "$mcp_path" ]] && info ".mcp.json 已存在，将增量合并 github 配置（保留其它 MCP server）"
+    [[ -f "$mcp_path" ]] && info ".mcp.json 已存在，将增量合并 github + atlassian 配置（保留其它 MCP server）"
     # python3 读旧 JSON、仅 merge mcpServers.github（保留用户其它 server）；凭据 ${GITHUB_TOKEN} 环境变量化
     GITHUB_AUTH_MODE="$auth_mode" python3 - "$mcp_path" << 'PYEOF'
 import json, os, sys
@@ -831,6 +831,8 @@ else:
         "url": "https://api.githubcopilot.com/mcp",
         "headers": {"Authorization": "Bearer ${GITHUB_TOKEN}", "X-MCP-Readonly": "true"},
     }
+# Atlassian/Jira：项目级 .mcp.json，Streamable HTTP；server 名固定 plugin_atlassian_atlassian（工具名 mcp__plugin_atlassian_atlassian__*）
+servers["plugin_atlassian_atlassian"] = {"type": "http", "url": "https://mcp.atlassian.com/v1/mcp"}
 cfg["mcpServers"] = servers
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)
@@ -839,28 +841,24 @@ PYEOF
     if [[ $? -ne 0 ]]; then
         error ".mcp.json 生成失败（python3 合并出错）"; return 1
     fi
-    success ".mcp.json 已生成（$auth_mode 模式，增量合并）"
+    success ".mcp.json 已生成（github=$auth_mode 模式 + atlassian HTTP，增量合并）"
 
-    # Jira/Atlassian Plugin — 写入 settings.json
+    # settings.json — 禁用 atlassian plugin（避免与 .mcp.json 同名 server 命名空间冲突）
     local settings_path="$ROOT_DIR/.claude/settings.json"
     if [[ -f "$settings_path" ]]; then
         python3 -c "
 import json
 with open('$settings_path') as f: s = json.load(f)
-s.setdefault('enabledPlugins', {})['atlassian@claude-plugins-official'] = True
-s.setdefault('extraKnownMarketplaces', {})['claude-plugins-official'] = {'source': {'source': 'github', 'repo': 'anthropics/claude-plugins-official'}}
+s.setdefault('enabledPlugins', {})['atlassian@claude-plugins-official'] = False
 with open('$settings_path', 'w') as f: json.dump(s, f, indent=2)
-" 2>/dev/null && success "settings.json 已更新（Jira Plugin）" || warn "settings.json 更新失败"
+" 2>/dev/null && success "settings.json 已更新（已禁用 atlassian plugin，改用 .mcp.json 远程 server）" || warn "settings.json 更新失败"
     else
         cat > "$settings_path" << 'SETTINGSEOF'
 {
-  "enabledPlugins": { "atlassian@claude-plugins-official": true },
-  "extraKnownMarketplaces": {
-    "claude-plugins-official": { "source": { "source": "github", "repo": "anthropics/claude-plugins-official" } }
-  }
+  "enabledPlugins": { "atlassian@claude-plugins-official": false }
 }
 SETTINGSEOF
-        success "settings.json 已创建（Jira Plugin）"
+        success "settings.json 已创建（atlassian 改用 .mcp.json 远程 server）"
     fi
     echo
 }
@@ -877,13 +875,19 @@ phase6() {
 
     info "[Jira]"
     local jira_ok=false
+    local mcp_path="$ROOT_DIR/.mcp.json"
     local settings_path="$ROOT_DIR/.claude/settings.json"
-    if [[ -f "$settings_path" ]]; then
-        python3 -c "import json; s=json.load(open('$settings_path')); exit(0 if s.get('enabledPlugins',{}).get('atlassian@claude-plugins-official') else 1)" 2>/dev/null && jira_ok=true
+    if [[ -f "$mcp_path" ]]; then
+        python3 -c "import json; d=json.load(open('$mcp_path')); exit(0 if d.get('mcpServers',{}).get('plugin_atlassian_atlassian') else 1)" 2>/dev/null && jira_ok=true
     fi
-    if $jira_ok; then success "  Jira Plugin 已配置（settings.json）"
-    else warn "  Jira Plugin 未配置，请运行 [5] 生成配置"; fi
-    info "  首次使用需认证：/mcp → Atlassian → Authenticate → 浏览器 OAuth"
+    # 提醒：plugin 仍启用会与 .mcp.json 同名 server 冲突
+    if [[ -f "$settings_path" ]]; then
+        python3 -c "import json; s=json.load(open('$settings_path')); exit(0 if s.get('enabledPlugins',{}).get('atlassian@claude-plugins-official') is True else 1)" 2>/dev/null && \
+            warn "  [WARN] atlassian plugin 仍启用——会与 .mcp.json server 命名空间冲突，请运行 [5] 重新生成以禁用"
+    fi
+    if $jira_ok; then success "  Atlassian MCP 已配置（.mcp.json，Streamable HTTP）"
+    else warn "  Atlassian MCP 未配置，请运行 [5] 生成配置"; fi
+    info "  首次使用需认证：/mcp → plugin_atlassian_atlassian → Authenticate → 浏览器 OAuth"
 
     info "[Obsidian KB]"
     local obs_found=""

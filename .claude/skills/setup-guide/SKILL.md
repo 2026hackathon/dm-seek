@@ -80,11 +80,30 @@ description: dm-seek 开箱引导/配置参考手册——GitHub 双轨认证、
 
 ---
 
-## Jira / Atlassian Plugin
+## Jira / Atlassian（项目级 `.mcp.json`）
 
-1. 在 Claude Code 中执行：`/plugin install atlassian@claude-plugins-official`
-2. `/mcp` → Atlassian → Authenticate → 浏览器 OAuth 授权
-3. 验证：`mcp__plugin_atlassian_atlassian__getAccessibleAtlassianResources`（取 cloudId）/ `mcp__plugin_atlassian_atlassian__searchJiraIssuesUsingJql` 可用
+> ⚠️ 用项目级 `.mcp.json` 注册，**不要**用 `/plugin install atlassian@claude-plugins-official`。两者会争用同一命名空间（`plugin_atlassian_atlassian`）造成冲突，故 plugin 须禁用、统一走 `.mcp.json`。
+>
+> 注：teammate 拿不到 Atlassian 工具的**根因不是注册方式**，而是用了 `claude --agent dongmei-ma`——`--agent` 受限 lead 不向 in-process teammate 传 MCP 工具。**必须用普通 `claude` + `/dm-start` 启动**（见 `runtime-spec.md` §4.6）。`.mcp.json` 远程注册本身有效。
+>
+> Atlassian 端点用 **Streamable HTTP**（`type: http`，`/v1/mcp`）——旧的 HTTP+SSE（`/v1/sse`）已于 2026-06 弃用停服。
+
+1. 在 `.mcp.json` 中注册 Atlassian 远程 server（server 名刻意取 `plugin_atlassian_atlassian`，使工具名保持 `mcp__plugin_atlassian_atlassian__*`，与各 agent allowlist 兼容）：
+
+   ```jsonc
+   {
+     "mcpServers": {
+       "plugin_atlassian_atlassian": {
+         "type": "http",
+         "url": "https://mcp.atlassian.com/v1/mcp"
+       }
+     }
+   }
+   ```
+
+2. 确保 `settings.json` 中 atlassian plugin 为 `false`（避免与 `.mcp.json` 同名 server 命名空间冲突），并在 `settings.local.json` 的 `enabledMcpjsonServers` 中包含 `plugin_atlassian_atlassian`（或 `enableAllProjectMcpServers: true`）。
+3. `/mcp` → `plugin_atlassian_atlassian` → Authenticate → 浏览器 OAuth 授权。
+4. 验证：`mcp__plugin_atlassian_atlassian__getAccessibleAtlassianResources`（取 cloudId）/ `mcp__plugin_atlassian_atlassian__searchJiraIssuesUsingJql` 可用，且 spawn 的 jira-tracer teammate 同样可见。
 
 ---
 
@@ -283,7 +302,10 @@ Phase 4 初始化 KB vault 时，自动将每个 vault 注册到 Obsidian 配置
 
 | 症状 | 可能原因 | 解决 |
 |------|---------|------|
-| jira-tracer 报 "Jira 不可用" | OAuth 未完成 | `/mcp` → Atlassian → Authenticate |
+| jira-tracer 报 "Jira 不可用" | OAuth 未完成 | `/mcp` → `plugin_atlassian_atlassian` → Authenticate |
+| teammate 看不到 MCP 工具（Atlassian 或 GitHub 都缺） | 用了 `claude --agent dongmei-ma` 启动——`--agent` 受限 lead 不向 in-process teammate 传 MCP 工具（即便 lead 自身能调、spawn 前探活也成功） | **改用普通 `claude` + `/dm-start` 启动**（runtime-spec §4.6）。普通会话 lead 工具完整，teammate 能继承 MCP |
+| teammate 看不到 MCP（已用 /dm-start 启动仍缺） | spawn 时 lead 的 MCP 尚未连好（次要原因） | `/dm-start` 内置「MCP 就绪门控」会先探活再 spawn；若仍缺，先在 lead 会话 `/mcp` 确认 github / plugin_atlassian_atlassian 均 connected |
+| 仅 Atlassian server 冲突/重复 | plugin 与 .mcp.json 同名 server 争用命名空间 | 禁用 atlassian plugin，统一用 .mcp.json 注册（见上方 Jira 配置） |
 | OAuth token 过期 | 缓存失效 | 同上，重新认证即可 |
 
 ### 网络问题
