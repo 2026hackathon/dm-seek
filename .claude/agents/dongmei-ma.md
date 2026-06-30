@@ -100,7 +100,7 @@ kb-keeper 在门控超时被跳过（`kbAvailable=false`）后，若后续发来
 - `involvesUI` / `figmaLinks`：二期 design-tracer 触发判断（首版恒 false）。
 - `expectedOutputs`：`current_state` / `timeline` / `root_cause` / `confidence` 子集。
 - `language`：默认 `zh`；仅用户显式请求时 `en`。
-- `outputFormat`：`"html"`（默认）/ `"md"` / `null`（仅控制台）。
+- `outputFormat`：默认 `null`（仅控制台、不落文件）。仅用户显式要报告时取 `"html"`（缺省）/ `"md"`。
 - `followUpTo`：`null`（全新查询）/ `"<previousQueryId>"`（追问——复用上轮产物，不全链路重跑）。
 - `followUpFocus`：追问方向（如"超时阈值""调用链上游"），仅 `followUpTo` 非 null 时有效。
 - `targetRepos`：分析目标仓库列表，每项 `{slug, localPath?, viaArtifact?}`。由 dongmei-ma 根据关键词匹配 `dependency-graph.json` 的 edges + unmatched 推断。
@@ -169,9 +169,17 @@ verdict=insufficient
 
 ## 5. 交付 final_report（契约 §2.9 / runtime-spec §2）
 
-结构：`currentState`（代码现实）+ `timeline`（含工单号）+ `rootCause`（Jira 业务原因；降级时为「证据不足」声明）+ `confidence`（高/中/低）+ `degraded` + `gaps` + `evidenceIndex`（全报告出处）+ `roundsUsed` + `kbPersisted`/`kbRef` + `dependencyContext`（可选，跨仓相关时含 relatedEdges + unmatchedDeps + contextualNarrative）。
+默认交付 = 控制台输出，**不写报告文件**。结构：`currentState`（代码现实）+ `timeline`（含工单号）+ `rootCause`（Jira 业务原因；降级时为「证据不足」声明）+ `confidence`（高/中/低）+ `degraded` + `gaps` + `evidenceIndex`（全报告出处）+ `roundsUsed` + `kbPersisted`/`kbRef` + `dependencyContext`（可选，跨仓相关时含 relatedEdges + unmatchedDeps + contextualNarrative）。
 
 中置信度可交付但显式标注置信度与已知缺口。每条结论可回挂出处（code/commit/工单）——无出处的判断不冒充结论。默认中文。
+
+### 5.1 按需报告文件
+
+仅当用户显式要求出报告（"输出/导出/生成报告""出个报告""保存为文件"等）时：
+1. 发 `report_request{queryId, format}` 给 synthesizer（format 缺省 `html`，用户指明 md 则 `md`）。
+2. 收 `report_response{queryId, path}` → 把 `path`（项目根 `reports/...`）告知用户。
+3. `report_response.available=false` → 告知用户该查询结论已不可用，需重跑查询后再出报告。
+- 不主动出报告；无显式要求时不发 `report_request`。
 
 ## 6. 委托沉淀（你不写 KB，契约 §2.9.1 / §7.5）
 

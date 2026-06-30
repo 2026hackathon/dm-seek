@@ -2,7 +2,7 @@
 
 > 本文是 dm-seek（马冬梅计划）agent team 的**运行时规则单一载体**：agent / skill 在运行时引用本文对应小节。
 >
-> 引用约定：agent / skill 以 `runtime-spec §N` 形式引用本文小节（如 `§3 九类场景`）。
+> 引用约定：agent / skill 以 `runtime-spec §N` 形式引用本文小节（如 `§3 应用场景目录`）。
 
 ## §1 硬约束：以代码为唯一事实基准
 
@@ -22,6 +22,7 @@ code-analyst ──batch N──→ synthesizer       [分批：code_location_se
 code-analyst ──batch N──→ jira-tracer        [分批：ticket_ids]
 code-analyst ⇄ git-tracer                    [远端取码/远端验证请求]
 jira-tracer ──batch N──→ synthesizer         [分批：jira_reasons_partial；最终：jira_reasons]
+dongmei-ma ⇄ synthesizer                      [report_request / report_response 按需——仅用户要报告时]
 ```
 
 每个 agent 同时向 **dongmei-ma** 发 STATUS（纯文本 ≤300 字）。
@@ -35,7 +36,7 @@ jira-tracer ──batch N──→ synthesizer         [分批：jira_reasons_pa
 5. **git-tracer** 不产出 `repo_timeline`。仅在 code-analyst 请求时响应：远端取码 + 远端跨仓验证 + 态C 过时检测（fetch+ls-remote）。独占 GitHub MCP。
 6. **jira-tracer**（normal/deep）收 `ticket_ids` 分批 → B4 缓存去重 → 分批查 Jira → `jira_reasons_partial` 直达 synthesizer → 收 `batch_complete` 后汇总发最终 `jira_reasons`。
 7. **synthesizer** 渐进预处理 → 收齐 `batch_complete` + `jira_reasons` 后 B1 增量合成 → S7 evidence-check 自检 → `synthesis`（含 `selfVerification`）直达 dongmei-ma。
-8. synthesizer S7 自检：sufficient → 交付+沉淀；insufficient → 附带 rework_suggestion。
+8. synthesizer S7 自检：sufficient → dongmei-ma 控制台交付 + 沉淀；insufficient → 附带 rework_suggestion。报告文件不在此步生成——仅用户要求时 dongmei-ma 发 report_request 委托 synthesizer 写 `reports/`。
 
 ### 返工协调
 
@@ -49,6 +50,8 @@ synthesizer 产 `rework_suggestion`；dongmei-ma 决策（分析/调度分离）
 
 1. **高层结论（`executiveSummary`）**：面向非技术人员的业务语言摘要——将 Jira 业务原因与代码变化的高层影响编织为连贯叙事。默认不暴露类名/方法名；代码与 Jira 有出入时例外允许暴露以定位差异。
 2. **完整推导（`final_report`）**：当前实现状态 + 演变时间线（含工单号）+ 根因解释（降级时为「证据不足」声明）+ 置信度（高/中/低）+（降级时）缺口标注。每条结论挂出处。
+
+默认仅控制台交付上述双层结论，**不写报告文件**。报告文件（`.html`/`.md`，写于项目根 `reports/`）仅在用户显式要求时，由 dongmei-ma 发 `report_request` 委托 synthesizer 生成。
 
 结论自动沉淀至 KB `queries/`，同类问题下次秒答；增量发现随终局沉淀 append 至 `modules/`/`entrypoints/`。
 
@@ -94,7 +97,7 @@ dongmei-ma 根据自然语言信号判定查询深度（kb-keeper 参与由 `kbA
 | `round` | number | 必填 | 首轮=0，发散重派+1，上限 2。仅 dongmei-ma 维护 |
 | `from` | string | 必填 | 产出方 agent id |
 | `to` | string | 必填 | 目标 agent id |
-| `payloadType` | string | 必填 | 枚举：`query_plan`/`kb_clue_set`/`code_location_set`/`code_fetch_request`/`code_fetch_response`/`repo_timeline`/`jira_reasons`/`jira_reasons_partial`/`kb_increment`/`re_dispatch`/`synthesis`/`final_report`/`kb_persist_request`/`batch_complete` |
+| `payloadType` | string | 必填 | 枚举：`query_plan`/`kb_clue_set`/`code_location_set`/`code_fetch_request`/`code_fetch_response`/`repo_timeline`/`jira_reasons`/`jira_reasons_partial`/`kb_increment`/`re_dispatch`/`synthesis`/`final_report`/`kb_persist_request`/`batch_complete`/`report_request`/`report_response` |
 | `batchInfo` | object | 条件 | `{index, estimatedTotal?, isLast?, totalBatches?, narrativeName?, errors?}`。分批产出时必填 |
 | `re_dispatch` | object | 条件 | `{targetAgent, hints[], round, scope?, targetBatches?}`。返工派发时必填 |
 | `payload` | object | 必填 | 对应 payloadType 的具体内容 |
@@ -105,21 +108,21 @@ dongmei-ma 根据自然语言信号判定查询深度（kb-keeper 参与由 `kbA
 
 **信封透传**：除 dongmei-ma 外，其余 agent 透传 `queryId`/`round`，不改写、不自增。
 
-## §3 九类应用场景
+## §3 应用场景目录（开放集合）
 
-供 dongmei-ma 分类 `intent`/`scenario`、synthesizer 选分析方法。清单可扩展、非封闭集合。
+**默认路径 = 通用六步（`synthesis-core-generic-v1`）**。查询命中下表场景时，在通用六步上叠加该场景的侧重维度与特化步骤（方法定义以 synthesis-core SKILL §2 为单一权威）。下表为 `intent`/`scenario` 词汇表，**非穷举、可扩展**。未命中任一场景 → 不强行归类、不降级，按通用六步正常产出。`current_state`（"是什么/在哪里/解释"等现状询问）直接走通用六步。
 
-| # | 场景 | intent slug | 价值 |
-| --- | --- | --- | --- |
-| 1 | 实现与需求文档差异核查 | `change_reason` | 定位「Jira 先变还是代码先变」+ 差异时间节点与责任工单 |
-| 2 | 新需求影响范围评估 | `impact_scope` | 模块依赖与历史变更模式，识别隐性耦合 |
-| 3 | 缺陷责任定位 | `defect_locate` | 追溯最后修改 commit 与工单，带时间线/负责人的证据链 |
-| 4 | 新成员知识加速 | `onboarding` | 三源重建模块设计决策历程 |
-| 5 | 技术债务定性 | `tech_debt` | 区分「有业务原因的历史决策」与「未清理临时方案」 |
-| 6 | 回归缺陷溯源 | `regression_trace` | 定位逻辑最近被触碰 commit 与工单，主动修改 vs 隐藏缺陷 |
-| 7 | 功能蒸发追踪 | `feature_evaporation` | 还原功能被删除的 commit、工单与删除前最后修改 |
-| 8 | 跨团队接口争议仲裁 | `interface_dispute` | 并排「约定变更记录 vs 代码实现记录」 |
-| 9 | 设计与实现对齐审查（含 Figma） | （二期） | 并排「代码改了什么」与「设计意图」，**二期能力** |
+| # | 场景 | intent slug |
+| --- | --- | --- |
+| 1 | 实现与需求文档差异核查 | `change_reason` |
+| 2 | 新需求影响范围评估 | `impact_scope` |
+| 3 | 缺陷责任定位 | `defect_locate` |
+| 4 | 新成员知识加速 | `onboarding` |
+| 5 | 技术债务定性 | `tech_debt` |
+| 6 | 回归缺陷溯源 | `regression_trace` |
+| 7 | 功能蒸发追踪 | `feature_evaporation` |
+| 8 | 跨团队接口争议仲裁 | `interface_dispute` |
+| 9 | 设计与实现对齐审查（Figma，二期） | （二期） |
 
 ## §4 角色职责与独占机制（软边界 / 两防线）
 
@@ -132,7 +135,7 @@ dongmei-ma 根据自然语言信号判定查询深度（kb-keeper 参与由 `kbA
 | `code-analyst` | 定位解读 core-ng 代码；独占本地 git（Bash 直读）；调用 git-analysis skill 统一产出 `repo_timeline` + 工单号抽取；按叙事单元分批交付；远端取码经 git-tracer | **无**（本地代码直读 + 本地 git 经 Bash；远端经 git-tracer） |
 | `git-tracer` | GitHub 远端网关，**独占 GitHub MCP**（只读子集）；远端取码响应；远端跨仓验证；态C 过时检测（fetch+ls-remote）。不产出 `repo_timeline` | `mcp__github__*`（只读） |
 | `jira-tracer` | 经 Atlassian Plugin 取工单业务原因与因果脉络。收 ticket_ids → 分批查 Jira → jira_reasons_partial | `mcp__plugin_atlassian_atlassian__*`（只读） |
-| `synthesizer` | 综合 code+git+jira → 结论（9 类场景）；分析方法沉淀为 skill | **无**（消费上游三源产物） |
+| `synthesizer` | 综合 code+git+jira → 结论（通用六步 + 场景特化）；分析方法沉淀为 skill | **无**（消费上游三源产物） |
 
 > `design-tracer`（Figma 设计追溯）为二期。
 
@@ -155,7 +158,7 @@ MCP server 经项目 `.mcp.json` 注册；`teammateMode: in-process` 下 teammat
 所有对代码、GitHub、Jira 的操作只读。唯一例外：
 1. `git fetch`（态C 过时检测，参数最小化——`--no-auto-gc`/`--no-tags`）
 2. KB 写操作（归 kb-keeper，KB 定位即知识沉淀存储）
-3. 报告文件写入（synthesizer 写 `.claude/reports/` 下 `.html`/`.md`）
+3. 报告文件写入（synthesizer 写项目根 `reports/`——`.claude` 同级——下 `.html`/`.md`；仅按需，收到 dongmei-ma `report_request` 时）
 
 **严禁** `push`/`commit`/`reset`/`checkout`/`tag`/`rebase`/`stash`/`rm` 等改变仓库状态的操作。Jira 仅 get/search；GitHub MCP 仅 get/search。
 
