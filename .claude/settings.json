@@ -3,10 +3,7 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "defaultShell": "powershell",
-  "enabledPlugins": {
-    "atlassian@claude-plugins-official": true
-  },
-  "extraKnownMarketplaces": {
+    "extraKnownMarketplaces": {
     "claude-plugins-official": {
       "source": {
         "source": "github",
